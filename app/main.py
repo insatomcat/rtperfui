@@ -199,12 +199,16 @@ async def run_cyclictest(
             status_code=500,
         )
 
+    cmd_str = " ".join(shlex.quote(x) for x in cmd_list)
+
     if completed.returncode != 0:
         return JSONResponse(
             {
                 "error": "cyclictest a retourné un code d'erreur",
                 "returncode": completed.returncode,
                 "stderr": completed.stderr,
+                "stdout": completed.stdout,
+                "command": cmd_str,
             },
             status_code=500,
         )
@@ -212,9 +216,10 @@ async def run_cyclictest(
     parsed = parse_cyclictest_output(completed.stdout)
     return JSONResponse(
         {
-            "command": " ".join(shlex.quote(x) for x in cmd_list),
+            "command": cmd_str,
             "latencies": parsed["latencies"],
             "summary": parsed["summary"],
+            "raw_output": parsed["raw"],
         }
     )
 

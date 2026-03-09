@@ -112,6 +112,24 @@
                 <canvas id="latency-chart"></canvas>
             </div>
         </section>
+
+        <section class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 font-mono">
+            <details>
+                <summary class="cursor-pointer select-none text-slate-300">
+                    Détails commande / sortie cyclictest
+                </summary>
+                <div class="mt-2 space-y-2">
+                    <div>
+                        <span class="text-slate-500">Commande :</span>
+                        <pre id="cmd-details" class="mt-1 whitespace-pre-wrap break-all text-slate-300"></pre>
+                    </div>
+                    <div>
+                        <span class="text-slate-500">Sortie (stdout/stderr) :</span>
+                        <pre id="output-details" class="mt-1 max-h-64 overflow-auto whitespace-pre text-slate-300 bg-slate-950/60 rounded-md p-2"></pre>
+                    </div>
+                </div>
+            </details>
+        </section>
     </main>
 </div>
 
@@ -120,6 +138,8 @@
     const statusElt = document.getElementById("status");
     const runBtn = document.getElementById("run-btn");
     const summaryElt = document.getElementById("summary");
+    const cmdDetailsElt = document.getElementById("cmd-details");
+    const outputDetailsElt = document.getElementById("output-details");
 
     let chart;
 
@@ -202,6 +222,8 @@
 
             if (!res.ok) {
                 setStatus(data.error || "Erreur lors de l'exécution de cyclictest", "error");
+                cmdDetailsElt.textContent = data.command || "";
+                outputDetailsElt.textContent = (data.stdout || "") + (data.stderr ? ("\n\n[stderr]\n" + data.stderr) : "");
                 summaryElt.textContent = "";
                 if (chart) {
                     chart.destroy();
@@ -211,6 +233,8 @@
             }
 
             const latencies = data.latencies || [];
+            cmdDetailsElt.textContent = data.command || "";
+            outputDetailsElt.textContent = data.raw_output || "";
             if (latencies.length === 0) {
                 setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de cyclictest.", "error");
                 summaryElt.textContent = "";
