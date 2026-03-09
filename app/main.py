@@ -133,12 +133,13 @@ def parse_cyclictest_output(raw: str) -> dict:
     global_max: Optional[int] = None
     global_avg: Optional[float] = None
 
+    # 1) Tentative de parsing du format "classique" avec Min/Avg/Max.
     for line in lines:
         line = line.strip()
         if not line:
             continue
         # Lignes typiques: "T: 0 (  3982) P:99 I:1000 C:  6000 Min:      0 Act:   3 Avg:   2 Max:  13"
-        if "Max:" in line:
+        if "Max:" in line and "Min:" in line and "Avg:" in line:
             parts = line.replace(":", " ").split()
             try:
                 max_idx = parts.index("Max") + 1
@@ -148,13 +149,61 @@ def parse_cyclictest_output(raw: str) -> dict:
                 min_idx = parts.index("Min") + 1
                 min_val = int(parts[min_idx])
                 avg_idx = parts.index("Avg") + 1
-                avg_val = float(parts[avg_idx])
+                avg_val = float(avg_idx and parts[avg_idx])
 
                 global_min = min_val if global_min is None else min(global_min, min_val)
                 global_max = max_val if global_max is None else max(global_max, max_val)
                 global_avg = avg_val  # dernier avg lu
             except (ValueError, IndexError):
                 continue
+
+    # 2) Si on n'a rien trouvé, fallback sur le format "histogramme" Debian.
+    if not latencies:
+        histogram_latencies: List[int] = []
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            # Format attendu: "<bucket> <count_t0> <count_t1> ..."
+            if not parts[0].isdigit():
+                continue
+            try:
+                bucket = int(parts[0])
+                counts = [int(p) for p in parts[1:] if p.isdigit()]
+            except ValueError:
+                continue
+
+            if not counts:
+                continue
+
+            total = sum(counts)
+            # On ne retient que les buckets où au moins un thread a vu cette latence.
+            if total > 0:
+                histogram_latencies.append(bucket)
+
+        if histogram_latencies:
+            latencies = histogram_latencies
+            global_min = min(histogram_latencies)
+            global_max = max(histogram_latencies)
+            global_avg = sum(histogram_latencies) / len(histogram_latencies)
+
+        # On essaie aussi de lire la ligne "# Max Latencies: ..." pour info.
+        for line in lines:
+            if line.strip().startswith("# Max Latencies"):
+                parts = line.strip().split()
+                # "# Max Latencies: 00006 00005 ..."
+                nums: List[int] = []
+                for p in parts[3:]:
+                    p_clean = p.strip()
+                    if p_clean.isdigit():
+                        nums.append(int(p_clean))
+                if nums:
+                    max_from_summary = max(nums)
+                    global_max = max_from_summary if global_max is None else max(
+                        global_max, max_from_summary
+                    )
+                break
 
     return {
         "latencies": latencies,
