@@ -6,23 +6,22 @@
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-2 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Vérifications système temps réel
+                {{ t(lang, "systemcheck_title") }}
             </h2>
             <p class="text-xs text-slate-400 mb-4">
-                Un clic lance une série de checks sur la configuration de la machine hôte
-                (noyau, boot, CPU, hugepages, PTP, etc.) et produit un rapport synthétique.
+                {{ t(lang, "systemcheck_intro") }}
             </p>
             <div class="flex items-center justify-between gap-4">
                 <p id="status" class="text-xs text-slate-400"></p>
                 <button id="run-btn"
                         class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed">
-                    Lancer les checks
+                    {{ t(lang, "systemcheck_run") }}
                 </button>
             </div>
         </section>
 
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-4 shadow-xl shadow-black/40">
-            <h2 class="text-sm font-medium mb-3 text-slate-200">Rapport</h2>
+            <h2 class="text-sm font-medium mb-3 text-slate-200">{{ t(lang, "systemcheck_report") }}</h2>
             <div id="checks-container" class="space-y-2 text-xs"></div>
         </section>
 {% endblock %}
@@ -32,6 +31,30 @@
     const runBtn = document.getElementById("run-btn");
     const statusElt = document.getElementById("status");
     const checksContainer = document.getElementById("checks-container");
+
+    const lang = "{{ lang }}";
+    const MSG = {
+        fr: {
+            running: "{{ t('fr', 'systemcheck_running') }}",
+            donePrefix: "{{ t('fr', 'systemcheck_done') }}",
+            errorPrefix: "{{ t('fr', 'systemcheck_error') }}",
+            netErrorPrefix: "Erreur réseau ou côté client : ",
+            status_ok: "{{ t('fr', 'status_ok') }}",
+            status_warn: "{{ t('fr', 'status_warn') }}",
+            status_fail: "{{ t('fr', 'status_fail') }}",
+            status_info: "{{ t('fr', 'status_info') }}",
+        },
+        en: {
+            running: "{{ t('en', 'systemcheck_running') }}",
+            donePrefix: "{{ t('en', 'systemcheck_done') }}",
+            errorPrefix: "{{ t('en', 'systemcheck_error') }}",
+            netErrorPrefix: "Network or client-side error: ",
+            status_ok: "{{ t('en', 'status_ok') }}",
+            status_warn: "{{ t('en', 'status_warn') }}",
+            status_fail: "{{ t('en', 'status_fail') }}",
+            status_info: "{{ t('en', 'status_info') }}",
+        },
+    }[lang] || {};
 
     function setStatus(message, type = "info") {
         statusElt.textContent = message || "";
@@ -54,10 +77,10 @@
 
     function labelForStatus(status) {
         switch (status) {
-            case "ok": return "OK";
-            case "warn": return "ATTENTION";
-            case "fail": return "ÉCHEC";
-            default: return "INFO";
+            case "ok": return MSG.status_ok || "OK";
+            case "warn": return MSG.status_warn || "WARN";
+            case "fail": return MSG.status_fail || "FAIL";
+            default: return MSG.status_info || "INFO";
         }
     }
 
@@ -94,23 +117,23 @@
 
     runBtn.addEventListener("click", async () => {
         runBtn.disabled = true;
-        setStatus("Checks en cours…");
+        setStatus(MSG.running || "");
         checksContainer.innerHTML = "";
 
         try {
-            const res = await fetch("/api/systemcheck/run");
+            const res = await fetch("/api/systemcheck/run?lang=" + encodeURIComponent(lang));
             const data = await res.json();
 
             if (!res.ok) {
-                setStatus(data.error || "Erreur lors des vérifications système.", "error");
+                setStatus(data.error || (MSG.errorPrefix || ""), "error");
                 return;
             }
 
             const checks = data.checks || [];
             renderChecks(checks);
-            setStatus(`Checks terminés (${checks.length} tests).`);
+            setStatus(`${MSG.donePrefix || ""} (${checks.length} tests).`);
         } catch (err) {
-            setStatus("Erreur réseau ou côté client : " + err, "error");
+            setStatus((MSG.netErrorPrefix || "") + err, "error");
         } finally {
             runBtn.disabled = false;
         }

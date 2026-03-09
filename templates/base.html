@@ -13,36 +13,56 @@
     <header class="flex items-center justify-between mb-8">
         <div>
             <h1 class="text-3xl font-semibold tracking-tight">rtperfui</h1>
-            <p class="text-slate-400 text-sm mt-1">Interface de test de performances temps réel</p>
+            <p class="text-slate-400 text-sm mt-1">{{ t(lang, "subtitle") }}</p>
         </div>
-        <nav class="flex gap-2 text-xs">
-            <a href="/"
+        <nav class="flex gap-2 text-xs items-center">
+            <a href="/?lang={{ lang }}"
                class="inline-flex items-center rounded-full border px-3 py-1 font-medium
                {% if active_tab == 'cyclictest' %}
                     border-emerald-500/40 bg-emerald-500/10 text-emerald-300
                {% else %}
                     border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
                {% endif %}">
-                cyclictest
+                {{ t(lang, "tab_cyclictest") }}
             </a>
-            <a href="/hwlatdetect"
+            <a href="/hwlatdetect?lang={{ lang }}"
                class="inline-flex items-center rounded-full border px-3 py-1 font-medium
                {% if active_tab == 'hwlatdetect' %}
                     border-emerald-500/40 bg-emerald-500/10 text-emerald-300
                {% else %}
                     border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
                {% endif %}">
-                hwlatdetect
+                {{ t(lang, "tab_hwlatdetect") }}
             </a>
-            <a href="/systemcheck"
+            <a href="/systemcheck?lang={{ lang }}"
                class="inline-flex items-center rounded-full border px-3 py-1 font-medium
                {% if active_tab == 'systemcheck' %}
                     border-emerald-500/40 bg-emerald-500/10 text-emerald-300
                {% else %}
                     border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
                {% endif %}">
-                systemcheck
+                {{ t(lang, "tab_systemcheck") }}
             </a>
+            <div class="ml-3 flex gap-1">
+                <a href="{{ request.url.path }}?lang=fr"
+                   class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium
+                   {% if lang == 'fr' %}
+                        border-emerald-500/60 bg-emerald-500/20 text-emerald-200
+                   {% else %}
+                        border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+                   {% endif %}">
+                    {{ t(lang, "lang_fr") }}
+                </a>
+                <a href="{{ request.url.path }}?lang=en"
+                   class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium
+                   {% if lang == 'en' %}
+                        border-emerald-500/60 bg-emerald-500/20 text-emerald-200
+                   {% else %}
+                        border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+                   {% endif %}">
+                    {{ t(lang, "lang_en") }}
+                </a>
+            </div>
         </nav>
     </header>
 

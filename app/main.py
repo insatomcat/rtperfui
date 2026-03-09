@@ -14,6 +14,146 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
+SUPPORTED_LANGS = ("fr", "en")
+
+
+TRANSLATIONS: Dict[str, Dict[str, str]] = {
+    "fr": {
+        "subtitle": "Interface de test de performances temps réel",
+        "tab_cyclictest": "cyclictest",
+        "tab_hwlatdetect": "hwlatdetect",
+        "tab_systemcheck": "systemcheck",
+        "lang_fr": "FR",
+        "lang_en": "EN",
+        "cyclictest_title": "Lancer un test cyclictest",
+        "cyclictest_duration": "Durée (secondes)",
+        "cyclictest_duration_help": "Temps total d'exécution du test.",
+        "cyclictest_interval": "Intervalle (µs)",
+        "cyclictest_interval_help": "Période de réveil de la tâche temps réel.",
+        "cyclictest_priority": "Priorité RT (SCHED_FIFO)",
+        "cyclictest_priority_help": "Priorité temps réel (1-99).",
+        "cyclictest_policy": "Politique temps réel",
+        "cyclictest_policy_help": "Politique d'ordonnancement temps réel.",
+        "cyclictest_cpus": "Affinité CPU",
+        "cyclictest_cpus_placeholder": "ex: 2,3 ou 1-3 (laisse vide pour CPUs isolés détectés)",
+        "cyclictest_cpus_help_prefix": "CPUs isolés détectés par défaut :",
+        "cyclictest_cpus_help_fallback": "aucun CPU isolé détecté, fallback sur tous les CPUs hors CPU0.",
+        "cyclictest_distance": "Distance (-d, µs)",
+        "cyclictest_distance_help": "Option -d de cyclictest. Laisser 0 pour ne pas la passer.",
+        "cyclictest_run": "Lancer le test",
+        "cyclictest_running": "Test en cours, merci de patienter…",
+        "cyclictest_done": "Test terminé.",
+        "cyclictest_parse_error": "Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de cyclictest.",
+        "cyclictest_error": "Erreur lors de l'exécution de cyclictest",
+        "cyclictest_hist_title": "Histogramme des latences (échelle log)",
+        "cyclictest_details_title": "Détails commande / sortie cyclictest",
+        "details_command": "Commande :",
+        "details_output": "Sortie (stdout/stderr) :",
+        "hwlat_title": "Lancer un test hwlatdetect",
+        "hwlat_duration": "Durée (secondes)",
+        "hwlat_duration_help": "Durée totale de la campagne de détection.",
+        "hwlat_window": "Fenêtre (µs)",
+        "hwlat_window_help": "Taille de la fenêtre d'observation.",
+        "hwlat_width": "Largeur (µs)",
+        "hwlat_width_help": "Largeur de l'intervalle de mesure dans la fenêtre.",
+        "hwlat_threshold": "Seuil (µs)",
+        "hwlat_threshold_help": "Seuil de latence au-delà duquel un outlier est signalé.",
+        "hwlat_run": "Lancer le test",
+        "hwlat_running": "Test hwlatdetect en cours, merci de patienter…",
+        "hwlat_done": "Test hwlatdetect terminé.",
+        "hwlat_chart_title": "Latences observées (hwlatdetect)",
+        "hwlat_details_title": "Détails commande / sortie hwlatdetect",
+        "hwlat_error": "Erreur lors de l'exécution de hwlatdetect",
+        "hwlat_parse_warn": "Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de hwlatdetect.",
+        "hwlat_no_samples_status": "Test hwlatdetect terminé, aucune latence mesurée au-dessus du seuil.",
+        "hwlat_no_samples_summary_prefix": "échantillons totaux:",
+        "hwlat_no_samples_summary_middle": "· au-dessus du seuil:",
+        "systemcheck_title": "Vérifications système temps réel",
+        "systemcheck_intro": (
+            "Un clic lance une série de checks sur la configuration de la machine hôte "
+            "(noyau, boot, CPU, hugepages, PTP, etc.) et produit un rapport synthétique."
+        ),
+        "systemcheck_run": "Lancer les checks",
+        "systemcheck_running": "Checks en cours…",
+        "systemcheck_done": "Checks terminés",
+        "systemcheck_report": "Rapport",
+        "systemcheck_error": "Erreur lors des vérifications système.",
+        "status_ok": "OK",
+        "status_warn": "ATTENTION",
+        "status_fail": "ÉCHEC",
+        "status_info": "INFO",
+        "summary_line": "min: {min} µs · avg: {avg} µs · max: {max} µs",
+        "summary_line_per_cpu": "{label} — min: {min} µs · avg: {avg} µs · max: {max} µs · samples: {samples}",
+    },
+    "en": {
+        "subtitle": "Real-time performance test interface",
+        "tab_cyclictest": "cyclictest",
+        "tab_hwlatdetect": "hwlatdetect",
+        "tab_systemcheck": "systemcheck",
+        "lang_fr": "FR",
+        "lang_en": "EN",
+        "cyclictest_title": "Run a cyclictest",
+        "cyclictest_duration": "Duration (seconds)",
+        "cyclictest_duration_help": "Total test duration.",
+        "cyclictest_interval": "Interval (µs)",
+        "cyclictest_interval_help": "Wakeup period of the real-time task.",
+        "cyclictest_priority": "RT priority (SCHED_FIFO)",
+        "cyclictest_priority_help": "Real-time priority (1-99).",
+        "cyclictest_policy": "Real-time policy",
+        "cyclictest_policy_help": "Real-time scheduling policy.",
+        "cyclictest_cpus": "CPU affinity",
+        "cyclictest_cpus_placeholder": "e.g. 2,3 or 1-3 (leave empty for detected isolated CPUs)",
+        "cyclictest_cpus_help_prefix": "Default isolated CPUs:",
+        "cyclictest_cpus_help_fallback": "no isolated CPU detected, falling back to all CPUs except CPU0.",
+        "cyclictest_distance": "Distance (-d, µs)",
+        "cyclictest_distance_help": "cyclictest -d option. Leave 0 to skip it.",
+        "cyclictest_run": "Run test",
+        "cyclictest_running": "Test running, please wait…",
+        "cyclictest_done": "Test finished.",
+        "cyclictest_parse_error": "Test finished but no latency could be parsed, please check cyclictest output.",
+        "cyclictest_error": "Error while executing cyclictest",
+        "cyclictest_hist_title": "Latency histogram (log scale)",
+        "cyclictest_details_title": "cyclictest command / output details",
+        "details_command": "Command:",
+        "details_output": "Output (stdout/stderr):",
+        "hwlat_title": "Run a hwlatdetect test",
+        "hwlat_duration": "Duration (seconds)",
+        "hwlat_duration_help": "Total duration of the detection campaign.",
+        "hwlat_window": "Window (µs)",
+        "hwlat_window_help": "Size of the observation window.",
+        "hwlat_width": "Width (µs)",
+        "hwlat_width_help": "Measurement interval width within the window.",
+        "hwlat_threshold": "Threshold (µs)",
+        "hwlat_threshold_help": "Latency threshold above which an outlier is reported.",
+        "hwlat_run": "Run test",
+        "hwlat_running": "hwlatdetect test running, please wait…",
+        "hwlat_done": "hwlatdetect test finished.",
+        "hwlat_chart_title": "Observed latencies (hwlatdetect)",
+        "hwlat_details_title": "hwlatdetect command / output details",
+        "hwlat_error": "Error while executing hwlatdetect",
+        "hwlat_parse_warn": "Test finished but no latency could be parsed, please check hwlatdetect output.",
+        "hwlat_no_samples_status": "hwlatdetect test finished, no latency measured above threshold.",
+        "hwlat_no_samples_summary_prefix": "total samples:",
+        "hwlat_no_samples_summary_middle": "· above threshold:",
+        "systemcheck_title": "Real-time system checks",
+        "systemcheck_intro": (
+            "One click runs a series of checks on the host configuration "
+            "(kernel, boot, CPU, hugepages, PTP, etc.) and produces a synthetic report."
+        ),
+        "systemcheck_run": "Run checks",
+        "systemcheck_running": "Running checks…",
+        "systemcheck_done": "Checks completed",
+        "systemcheck_report": "Report",
+        "systemcheck_error": "Error while running system checks.",
+        "status_ok": "OK",
+        "status_warn": "WARNING",
+        "status_fail": "FAIL",
+        "status_info": "INFO",
+        "summary_line": "min: {min} µs · avg: {avg} µs · max: {max} µs",
+        "summary_line_per_cpu": "{label} — min: {min} µs · avg: {avg} µs · max: {max} µs · samples: {samples}",
+    },
+}
+
 
 def detect_isolated_cpus() -> List[int]:
     """
@@ -59,13 +199,39 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
+def get_lang_from_request(request: Request) -> str:
+    # 1) Query parameter override
+    qp = request.query_params.get("lang")
+    if qp in SUPPORTED_LANGS:
+        return qp
+
+    # 2) Accept-Language header
+    header = request.headers.get("accept-language", "").lower()
+    if header.startswith("fr") or " fr" in header:
+        return "fr"
+
+    # 3) Default
+    return "en"
+
+
+def t(lang: str, key: str) -> str:
+    lang_dict = TRANSLATIONS.get(lang) or TRANSLATIONS["en"]
+    return lang_dict.get(key, TRANSLATIONS["en"].get(key, key))
+
+
+# Inject translation helper globally into Jinja
+templates.env.globals["t"] = t
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    lang = get_lang_from_request(request)
     isolated_cpus = detect_isolated_cpus()
     return templates.TemplateResponse(
         "cyclictest.html",
         {
             "request": request,
+            "lang": lang,
             "active_tab": "cyclictest",
             "isolated_cpus": isolated_cpus,
             # Valeurs par défaut "classiques"
@@ -716,10 +882,12 @@ async def run_cyclictest(
 
 @app.get("/hwlatdetect", response_class=HTMLResponse)
 async def hwlatdetect_page(request: Request) -> HTMLResponse:
+    lang = get_lang_from_request(request)
     return templates.TemplateResponse(
         "hwlatdetect.html",
         {
             "request": request,
+            "lang": lang,
             "active_tab": "hwlatdetect",
             # Valeurs par défaut raisonnables, ajustables
             "default_duration_s": 60,
@@ -787,10 +955,12 @@ async def run_hwlatdetect(
 
 @app.get("/systemcheck", response_class=HTMLResponse)
 async def systemcheck_page(request: Request) -> HTMLResponse:
+    lang = get_lang_from_request(request)
     return templates.TemplateResponse(
         "systemcheck.html",
         {
             "request": request,
+            "lang": lang,
             "active_tab": "systemcheck",
         },
     )

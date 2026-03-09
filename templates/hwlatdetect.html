@@ -11,48 +11,48 @@
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-4 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Lancer un test hwlatdetect
+                {{ t(lang, "hwlat_title") }}
             </h2>
 
             <form id="hwlat-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="space-y-1.5">
                     <label for="duration_s" class="block text-sm font-medium text-slate-200">
-                        Durée (secondes)
+                        {{ t(lang, "hwlat_duration") }}
                     </label>
                     <input id="duration_s" name="duration_s" type="number" min="1"
                            value="{{ default_duration_s }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Durée totale de la campagne de détection.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "hwlat_duration_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="window_us" class="block text-sm font-medium text-slate-200">
-                        Fenêtre (µs)
+                        {{ t(lang, "hwlat_window") }}
                     </label>
                     <input id="window_us" name="window_us" type="number" min="1"
                            value="{{ default_window_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Taille de la fenêtre d'observation.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "hwlat_window_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="width_us" class="block text-sm font-medium text-slate-200">
-                        Largeur (µs)
+                        {{ t(lang, "hwlat_width") }}
                     </label>
                     <input id="width_us" name="width_us" type="number" min="1"
                            value="{{ default_width_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Largeur de l'intervalle de mesure dans la fenêtre.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "hwlat_width_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="threshold_us" class="block text-sm font-medium text-slate-200">
-                        Seuil (µs)
+                        {{ t(lang, "hwlat_threshold") }}
                     </label>
                     <input id="threshold_us" name="threshold_us" type="number" min="1"
                            value="{{ default_threshold_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Seuil de latence au-delà duquel un outlier est signalé.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "hwlat_threshold_help") }}</p>
                 </div>
 
                 <div class="md:col-span-2 flex flex-col gap-2 pt-2">
@@ -61,7 +61,7 @@
                         <button type="submit"
                                 class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="run-btn">
-                            <span>Lancer le test</span>
+                            <span>{{ t(lang, "hwlat_run") }}</span>
                         </button>
                     </div>
                     <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -73,7 +73,7 @@
 
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-medium">Latences observées (hwlatdetect)</h2>
+                <h2 class="text-lg font-medium">{{ t(lang, "hwlat_chart_title") }}</h2>
                 <div id="summary" class="text-xs text-slate-400"></div>
             </div>
             <div class="h-64 md:h-80">
@@ -84,15 +84,15 @@
         <section class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 font-mono">
             <details>
                 <summary class="cursor-pointer select-none text-slate-300">
-                    Détails commande / sortie hwlatdetect
+                    {{ t(lang, "hwlat_details_title") }}
                 </summary>
                 <div class="mt-2 space-y-2">
                     <div>
-                        <span class="text-slate-500">Commande :</span>
+                        <span class="text-slate-500">{{ t(lang, "details_command") }}</span>
                         <pre id="cmd-details" class="mt-1 whitespace-pre-wrap break-all text-slate-300"></pre>
                     </div>
                     <div>
-                        <span class="text-slate-500">Sortie (stdout/stderr) :</span>
+                        <span class="text-slate-500">{{ t(lang, "details_output") }}</span>
                         <pre id="output-details" class="mt-1 max-h-64 overflow-auto whitespace-pre text-slate-300 bg-slate-950/60 rounded-md p-2"></pre>
                     </div>
                 </div>
@@ -109,6 +109,30 @@
     const cmdDetailsElt = document.getElementById("cmd-details");
     const outputDetailsElt = document.getElementById("output-details");
     const progressBar = document.getElementById("progress-bar");
+
+    const lang = "{{ lang }}";
+    const MSG = {
+        fr: {
+            running: "{{ t('fr', 'hwlat_running') }}",
+            done: "{{ t('fr', 'hwlat_done') }}",
+            errorPrefix: "{{ t('fr', 'hwlat_error') }}",
+            parseWarn: "{{ t('fr', 'hwlat_parse_warn') }}",
+            noSamplesStatus: "{{ t('fr', 'hwlat_no_samples_status') }}",
+            noSamplesTotalPrefix: "{{ t('fr', 'hwlat_no_samples_summary_prefix') }}",
+            noSamplesMiddle: "{{ t('fr', 'hwlat_no_samples_summary_middle') }}",
+            netErrorPrefix: "Erreur réseau ou côté client : ",
+        },
+        en: {
+            running: "{{ t('en', 'hwlat_running') }}",
+            done: "{{ t('en', 'hwlat_done') }}",
+            errorPrefix: "{{ t('en', 'hwlat_error') }}",
+            parseWarn: "{{ t('en', 'hwlat_parse_warn') }}",
+            noSamplesStatus: "{{ t('en', 'hwlat_no_samples_status') }}",
+            noSamplesTotalPrefix: "{{ t('en', 'hwlat_no_samples_summary_prefix') }}",
+            noSamplesMiddle: "{{ t('en', 'hwlat_no_samples_summary_middle') }}",
+            netErrorPrefix: "Network or client-side error: ",
+        },
+    }[lang] || {};
 
     let chart;
     let progressTimer = null;
@@ -218,7 +242,7 @@
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        setStatus("Test hwlatdetect en cours, merci de patienter…");
+        setStatus(MSG.running || "");
         runBtn.disabled = true;
 
         const formData = new FormData(form);
@@ -234,7 +258,7 @@
             const data = await res.json();
 
             if (!res.ok) {
-                setStatus(data.error || "Erreur lors de l'exécution de hwlatdetect", "error");
+                setStatus(data.error || (MSG.errorPrefix || ""), "error");
                 cmdDetailsElt.textContent = data.command || "";
                 outputDetailsElt.textContent = (data.stdout || "") + (data.stderr ? ("\n\n[stderr]\n" + data.stderr) : "");
                 summaryElt.textContent = "";
@@ -258,10 +282,10 @@
                 // Cas normal: aucun échantillon au-dessus du seuil (ou aucun échantillon tout court)
                 if (samplesRecorded !== null) {
                     summaryElt.textContent =
-                        `échantillons totaux: ${samplesRecorded} · au-dessus du seuil: ${samplesExceeding ?? 0}`;
-                    setStatus("Test hwlatdetect terminé, aucune latence mesurée au-dessus du seuil.", "info");
+                        `${MSG.noSamplesTotalPrefix || ""} ${samplesRecorded} ${MSG.noSamplesMiddle || ""} ${samplesExceeding ?? 0}`;
+                    setStatus(MSG.noSamplesStatus || "", "info");
                 } else {
-                    setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de hwlatdetect.", "error");
+                    setStatus(MSG.parseWarn || "", "error");
                     summaryElt.textContent = "";
                 }
 
@@ -275,12 +299,18 @@
 
             updateChart(latencies);
 
-            summaryElt.textContent =
-                `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
+            const lineTmpl = "{{ t(lang, 'summary_line') }}";
+            const min = summary.min ?? "?";
+            const avg = summary.avg ?? "?";
+            const max = summary.max ?? "?";
+            summaryElt.textContent = lineTmpl
+                .replace("{min}", String(min))
+                .replace("{avg}", String(avg))
+                .replace("{max}", String(max));
 
-            setStatus("Test hwlatdetect terminé.");
+            setStatus(MSG.done || "");
         } catch (err) {
-            setStatus("Erreur réseau ou côté client : " + err, "error");
+            setStatus((MSG.netErrorPrefix || "") + err, "error");
             summaryElt.textContent = "";
             if (chart) {
                 chart.destroy();

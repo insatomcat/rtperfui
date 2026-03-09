@@ -11,81 +11,80 @@
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-4 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Lancer un test cyclictest
+                {{ t(lang, "cyclictest_title") }}
             </h2>
 
             <form id="cyclictest-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="space-y-1.5">
                     <label for="duration_s" class="block text-sm font-medium text-slate-200">
-                        Durée (secondes)
+                        {{ t(lang, "cyclictest_duration") }}
                     </label>
                     <input id="duration_s" name="duration_s" type="number" min="1"
                            value="{{ default_duration_s }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Temps total d'exécution du test.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "cyclictest_duration_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="interval_us" class="block text-sm font-medium text-slate-200">
-                        Intervalle (µs)
+                        {{ t(lang, "cyclictest_interval") }}
                     </label>
                     <input id="interval_us" name="interval_us" type="number" min="1"
                            value="{{ default_interval_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Période de réveil de la tâche temps réel.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "cyclictest_interval_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="priority" class="block text-sm font-medium text-slate-200">
-                        Priorité RT (SCHED_FIFO)
+                        {{ t(lang, "cyclictest_priority") }}
                     </label>
                     <input id="priority" name="priority" type="number" min="1" max="99"
                            value="{{ default_priority }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Priorité temps réel (1-99).</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "cyclictest_priority_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="policy" class="block text-sm font-medium text-slate-200">
-                        Politique temps réel
+                        {{ t(lang, "cyclictest_policy") }}
                     </label>
                     <select id="policy" name="policy"
                             class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
                         <option value="fifo" {% if default_policy == "fifo" %}selected{% endif %}>SCHED_FIFO</option>
                         <option value="rr">SCHED_RR</option>
                     </select>
-                    <p class="text-xs text-slate-400">Politique d'ordonnancement temps réel.</p>
+                    <p class="text-xs text-slate-400">{{ t(lang, "cyclictest_policy_help") }}</p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="cpus" class="block text-sm font-medium text-slate-200">
-                        Affinité CPU
+                        {{ t(lang, "cyclictest_cpus") }}
                     </label>
                     <div class="flex flex-col md:flex-row gap-2">
                         <input id="cpus" name="cpus" type="text"
-                               placeholder="ex: 2,3 ou 1-3 (laisse vide pour CPUs isolés détectés)"
+                               placeholder="{{ t(lang, 'cyclictest_cpus_placeholder') }}"
                                class="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
                     </div>
                     <p class="text-xs text-slate-400">
-                        CPUs isolés détectés par défaut :
+                        {{ t(lang, "cyclictest_cpus_help_prefix") }}
                         {% if isolated_cpus %}
                             <span class="font-mono text-emerald-300">{{ isolated_cpus | join(", ") }}</span>
                         {% else %}
-                            <span class="text-amber-300">aucun CPU isolé détecté, fallback sur tous les CPUs hors CPU0.</span>
+                            <span class="text-amber-300">{{ t(lang, "cyclictest_cpus_help_fallback") }}</span>
                         {% endif %}
                     </p>
                 </div>
 
                 <div class="space-y-1.5">
                     <label for="distance_us" class="block text-sm font-medium text-slate-200">
-                        Distance (-d, µs)
+                        {{ t(lang, "cyclictest_distance") }}
                     </label>
                     <input id="distance_us" name="distance_us" type="number" min="0"
                            value="200"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
                     <p class="text-xs text-slate-400">
-                        Option <span class="font-mono">-d</span> de cyclictest.
-                        Laisser 0 pour ne pas la passer.
+                        {{ t(lang, "cyclictest_distance_help") }}
                     </p>
                 </div>
 
@@ -95,7 +94,7 @@
                         <button type="submit"
                                 class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
                                 id="run-btn">
-                            <span>Lancer le test</span>
+                            <span>{{ t(lang, "cyclictest_run") }}</span>
                         </button>
                     </div>
                     <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -107,7 +106,7 @@
 
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-medium">Histogramme des latences (échelle log)</h2>
+                <h2 class="text-lg font-medium">{{ t(lang, "cyclictest_hist_title") }}</h2>
                 <div id="summary" class="text-xs text-slate-400"></div>
             </div>
             <div class="h-64 md:h-80">
@@ -118,15 +117,15 @@
         <section class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 font-mono">
             <details>
                 <summary class="cursor-pointer select-none text-slate-300">
-                    Détails commande / sortie cyclictest
+                    {{ t(lang, "cyclictest_details_title") }}
                 </summary>
                 <div class="mt-2 space-y-2">
                     <div>
-                        <span class="text-slate-500">Commande :</span>
+                        <span class="text-slate-500">{{ t(lang, "details_command") }}</span>
                         <pre id="cmd-details" class="mt-1 whitespace-pre-wrap break-all text-slate-300"></pre>
                     </div>
                     <div>
-                        <span class="text-slate-500">Sortie (stdout/stderr) :</span>
+                        <span class="text-slate-500">{{ t(lang, "details_output") }}</span>
                         <pre id="output-details" class="mt-1 max-h-64 overflow-auto whitespace-pre text-slate-300 bg-slate-950/60 rounded-md p-2"></pre>
                     </div>
                 </div>
@@ -189,6 +188,24 @@
             }
         }, 1000);
     }
+
+    const lang = "{{ lang }}";
+    const MSG = {
+        fr: {
+            running: "{{ t('fr', 'cyclictest_running') }}",
+            done: "{{ t('fr', 'cyclictest_done') }}",
+            parseError: "{{ t('fr', 'cyclictest_parse_error') }}",
+            errorPrefix: "{{ t('fr', 'cyclictest_error') }}",
+            netErrorPrefix: "Erreur réseau ou côté client : ",
+        },
+        en: {
+            running: "{{ t('en', 'cyclictest_running') }}",
+            done: "{{ t('en', 'cyclictest_done') }}",
+            parseError: "{{ t('en', 'cyclictest_parse_error') }}",
+            errorPrefix: "{{ t('en', 'cyclictest_error') }}",
+            netErrorPrefix: "Network or client-side error: ",
+        },
+    }[lang] || {};
 
     function setStatus(message, type = "info") {
         statusElt.textContent = message || "";
@@ -312,7 +329,7 @@
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        setStatus("Test en cours, merci de patienter…");
+        setStatus(MSG.running || "");
         runBtn.disabled = true;
 
         const formData = new FormData(form);
@@ -328,7 +345,7 @@
             const data = await res.json();
 
             if (!res.ok) {
-                setStatus(data.error || "Erreur lors de l'exécution de cyclictest", "error");
+                setStatus(data.error || (MSG.errorPrefix || ""), "error");
                 cmdDetailsElt.textContent = data.command || "";
                 outputDetailsElt.textContent = (data.stdout || "") + (data.stderr ? ("\n\n[stderr]\n" + data.stderr) : "");
                 summaryElt.textContent = "";
@@ -346,7 +363,7 @@
 
             if ((!data.histogram || !Array.isArray(data.histogram.buckets) || data.histogram.buckets.length === 0) &&
                 latencies.length === 0) {
-                setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de cyclictest.", "error");
+                setStatus(MSG.parseError || "", "error");
                 summaryElt.textContent = "";
                 if (chart) {
                     chart.destroy();
@@ -371,17 +388,29 @@
                     const avg = s.avg !== null && s.avg !== undefined ? s.avg.toFixed(2) : "?";
                     const max = s.max ?? "?";
                     const total = s.total_samples ?? "?";
-                    return `${cpuLabel} — min: ${min} µs · avg: ${avg} µs · max: ${max} µs · samples: ${total}`;
+                    const tmpl = "{{ t(lang, 'summary_line_per_cpu') }}";
+                    return tmpl
+                        .replace("{label}", cpuLabel)
+                        .replace("{min}", String(min))
+                        .replace("{avg}", String(avg))
+                        .replace("{max}", String(max))
+                        .replace("{samples}", String(total));
                 });
                 summaryElt.textContent = lines.join("\n");
             } else {
-                summaryElt.textContent =
-                    `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
+                const lineTmpl = "{{ t(lang, 'summary_line') }}";
+                const min = summary.min ?? "?";
+                const avg = summary.avg ?? "?";
+                const max = summary.max ?? "?";
+                summaryElt.textContent = lineTmpl
+                    .replace("{min}", String(min))
+                    .replace("{avg}", String(avg))
+                    .replace("{max}", String(max));
             }
 
-            setStatus("Test terminé.");
+            setStatus(MSG.done || "");
         } catch (err) {
-            setStatus("Erreur réseau ou côté client : " + err, "error");
+            setStatus((MSG.netErrorPrefix || "") + err, "error");
             summaryElt.textContent = "";
             if (chart) {
                 chart.destroy();
