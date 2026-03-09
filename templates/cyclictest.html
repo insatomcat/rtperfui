@@ -221,23 +221,59 @@
 
         const histogram = data.histogram || {};
         const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
-        const counts = Array.isArray(histogram.counts) ? histogram.counts : [];
+        const perThread = Array.isArray(histogram.per_thread_counts) ? histogram.per_thread_counts : [];
 
         let chartType = "bar";
-        let labels;
-        let datasetData;
         let yScaleType = "logarithmic";
         let yLabel = "Nombre d'échantillons (log)";
+        let labels;
+        let datasets = [];
 
-        if (buckets.length && counts.length && buckets.length === counts.length) {
-            // Affichage histogramme classique: X = latence (µs), Y = nombre d'échantillons (log)
+        if (buckets.length && perThread.length) {
+            // Histogramme par CPU/thread, un dataset par colonne de cyclictest
             labels = buckets;
-            datasetData = counts;
+
+            // Palette simple de couleurs
+            const colors = [
+                "rgb(16, 185, 129)",
+                "rgb(59, 130, 246)",
+                "rgb(244, 114, 182)",
+                "rgb(251, 191, 36)",
+                "rgb(239, 68, 68)",
+                "rgb(129, 140, 248)",
+                "rgb(45, 212, 191)",
+            ];
+
+            const cpusUsed = Array.isArray(data.cpus_used) ? data.cpus_used : null;
+
+            perThread.forEach((counts, idx) => {
+                const color = colors[idx % colors.length];
+                const cpuLabel = cpusUsed && cpusUsed[idx] !== undefined
+                    ? `CPU ${cpusUsed[idx]}`
+                    : `thread ${idx}`;
+
+                datasets.push({
+                    label: cpuLabel,
+                    data: counts,
+                    borderColor: color,
+                    backgroundColor: color,
+                    borderWidth: 1,
+                });
+            });
         } else {
             // Fallback: on affiche la série brute de latences max sous forme de courbe linéaire
             const latencies = data.latencies || [];
             labels = latencies.map((_, i) => i + 1);
-            datasetData = latencies;
+            datasets = [
+                {
+                    label: "latence max (µs)",
+                    data: latencies,
+                    borderColor: "rgb(16, 185, 129)",
+                    backgroundColor: "rgba(16, 185, 129, 0.2)",
+                    pointRadius: 0,
+                    tension: 0.15,
+                },
+            ];
             chartType = "line";
             yScaleType = "linear";
             yLabel = "latence (µs)";
@@ -251,16 +287,7 @@
             type: chartType,
             data: {
                 labels,
-                datasets: [
-                    {
-                        label: chartType === "bar" ? "latence (µs)" : "latence max (µs)",
-                        data: datasetData,
-                        borderColor: "rgb(16, 185, 129)",
-                        backgroundColor: "rgba(16, 185, 129, 0.2)",
-                        pointRadius: chartType === "line" ? 0 : 0,
-                        tension: chartType === "line" ? 0.15 : 0,
-                    },
-                ],
+                datasets,
             },
             options: {
                 responsive: true,
@@ -271,7 +298,7 @@
                         grid: { color: "rgba(148, 163, 184, 0.1)" },
                         title: {
                             display: true,
-                            text: "échantillon",
+                            text: chartType === "bar" ? "latence (µs)" : "échantillon",
                             color: "#9ca3af",
                         },
                     },

@@ -161,7 +161,8 @@ def parse_cyclictest_output(raw: str) -> dict:
     if not latencies:
         histogram_latencies: List[int] = []
         histogram_buckets: List[int] = []
-        histogram_counts: List[int] = []
+        # counts par thread: index 0 -> thread 0, etc.
+        histogram_counts_per_thread: List[List[int]] = []
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -180,11 +181,21 @@ def parse_cyclictest_output(raw: str) -> dict:
                 continue
 
             total = sum(counts)
-            # On ne retient que les buckets où au moins un thread a vu cette latence.
+
+            # Initialisation de la structure par thread
+            if not histogram_counts_per_thread:
+                histogram_counts_per_thread = [[] for _ in range(len(counts))]
+
+            # On aligne sur le nombre de threads détectés au début
+            n_threads = min(len(histogram_counts_per_thread), len(counts))
+            histogram_buckets.append(bucket)
+            for idx in range(n_threads):
+                histogram_counts_per_thread[idx].append(counts[idx])
+
+            # Pour la liste "latencies" simplifiée et les stats globales,
+            # on ne prend que les buckets où au moins un thread a vu cette latence.
             if total > 0:
                 histogram_latencies.append(bucket)
-                histogram_buckets.append(bucket)
-                histogram_counts.append(total)
 
         if histogram_latencies:
             latencies = histogram_latencies
@@ -213,7 +224,10 @@ def parse_cyclictest_output(raw: str) -> dict:
         "latencies": latencies,
         "histogram": {
             "buckets": histogram_buckets if "histogram_buckets" in locals() else [],
-            "counts": histogram_counts if "histogram_counts" in locals() else [],
+            # tableau 2D: histogram_counts_per_thread[thread_index][bucket_index]
+            "per_thread_counts": histogram_counts_per_thread
+            if "histogram_counts_per_thread" in locals()
+            else [],
         },
         "summary": {
             "min": global_min,
@@ -373,6 +387,7 @@ async def run_cyclictest(
             "command": cmd_str,
             "latencies": parsed["latencies"],
             "histogram": parsed.get("histogram"),
+            "cpus_used": cpu_list,
             "summary": parsed["summary"],
             "raw_output": parsed["raw"],
         }
