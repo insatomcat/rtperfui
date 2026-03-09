@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>rtperfui - cyclictest</title>
+    <title>rtperfui - hwlatdetect</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Tailwind CSS via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,11 +18,11 @@
         </div>
         <nav class="flex gap-2 text-xs">
             <a href="/"
-               class="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
+               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
                 cyclictest
             </a>
             <a href="/hwlatdetect"
-               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
+               class="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
                 hwlatdetect
             </a>
         </nav>
@@ -32,10 +32,10 @@
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-4 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Lancer un test cyclictest
+                Lancer un test hwlatdetect
             </h2>
 
-            <form id="cyclictest-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form id="hwlat-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="space-y-1.5">
                     <label for="duration_s" class="block text-sm font-medium text-slate-200">
                         Durée (secondes)
@@ -43,58 +43,37 @@
                     <input id="duration_s" name="duration_s" type="number" min="1"
                            value="{{ default_duration_s }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Temps total d'exécution du test.</p>
+                    <p class="text-xs text-slate-400">Durée totale de la campagne de détection.</p>
                 </div>
 
                 <div class="space-y-1.5">
-                    <label for="interval_us" class="block text-sm font-medium text-slate-200">
-                        Intervalle (µs)
+                    <label for="window_us" class="block text-sm font-medium text-slate-200">
+                        Fenêtre (µs)
                     </label>
-                    <input id="interval_us" name="interval_us" type="number" min="1"
-                           value="{{ default_interval_us }}"
+                    <input id="window_us" name="window_us" type="number" min="1"
+                           value="{{ default_window_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Période de réveil de la tâche temps réel.</p>
+                    <p class="text-xs text-slate-400">Taille de la fenêtre d'observation.</p>
                 </div>
 
                 <div class="space-y-1.5">
-                    <label for="priority" class="block text-sm font-medium text-slate-200">
-                        Priorité RT (SCHED_FIFO)
+                    <label for="width_us" class="block text-sm font-medium text-slate-200">
+                        Largeur (µs)
                     </label>
-                    <input id="priority" name="priority" type="number" min="1" max="99"
-                           value="{{ default_priority }}"
+                    <input id="width_us" name="width_us" type="number" min="1"
+                           value="{{ default_width_us }}"
                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    <p class="text-xs text-slate-400">Priorité temps réel (1-99).</p>
+                    <p class="text-xs text-slate-400">Largeur de l'intervalle de mesure dans la fenêtre.</p>
                 </div>
 
                 <div class="space-y-1.5">
-                    <label for="policy" class="block text-sm font-medium text-slate-200">
-                        Politique temps réel
+                    <label for="threshold_us" class="block text-sm font-medium text-slate-200">
+                        Seuil (µs)
                     </label>
-                    <select id="policy" name="policy"
-                            class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                        <option value="fifo" {% if default_policy == "fifo" %}selected{% endif %}>SCHED_FIFO</option>
-                        <option value="rr">SCHED_RR</option>
-                    </select>
-                    <p class="text-xs text-slate-400">Politique d'ordonnancement temps réel.</p>
-                </div>
-
-                <div class="space-y-1.5 md:col-span-2">
-                    <label for="cpus" class="block text-sm font-medium text-slate-200">
-                        Affinité CPU
-                    </label>
-                    <div class="flex flex-col md:flex-row gap-2">
-                        <input id="cpus" name="cpus" type="text"
-                               placeholder="ex: 2,3 ou 1-3 (laisse vide pour CPUs isolés détectés)"
-                               class="flex-1 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                    </div>
-                    <p class="text-xs text-slate-400">
-                        CPUs isolés détectés par défaut :
-                        {% if isolated_cpus %}
-                            <span class="font-mono text-emerald-300">{{ isolated_cpus | join(", ") }}</span>
-                        {% else %}
-                            <span class="text-amber-300">aucun CPU isolé détecté, fallback sur tous les CPUs hors CPU0.</span>
-                        {% endif %}
-                    </p>
+                    <input id="threshold_us" name="threshold_us" type="number" min="1"
+                           value="{{ default_threshold_us }}"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    <p class="text-xs text-slate-400">Seuil de latence au-delà duquel un outlier est signalé.</p>
                 </div>
 
                 <div class="md:col-span-2 flex items-center justify-between pt-2">
@@ -110,7 +89,7 @@
 
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-medium">Latences observées (Max par échantillon)</h2>
+                <h2 class="text-lg font-medium">Latences observées (hwlatdetect)</h2>
                 <div id="summary" class="text-xs text-slate-400"></div>
             </div>
             <div class="h-64 md:h-80">
@@ -121,7 +100,7 @@
         <section class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 font-mono">
             <details>
                 <summary class="cursor-pointer select-none text-slate-300">
-                    Détails commande / sortie cyclictest
+                    Détails commande / sortie hwlatdetect
                 </summary>
                 <div class="mt-2 space-y-2">
                     <div>
@@ -139,7 +118,7 @@
 </div>
 
 <script>
-    const form = document.getElementById("cyclictest-form");
+    const form = document.getElementById("hwlat-form");
     const statusElt = document.getElementById("status");
     const runBtn = document.getElementById("run-btn");
     const summaryElt = document.getElementById("summary");
@@ -167,7 +146,7 @@
                 labels,
                 datasets: [
                     {
-                        label: "latence max (µs)",
+                        label: "latence (µs)",
                         data: latencies,
                         borderColor: "rgb(16, 185, 129)",
                         backgroundColor: "rgba(16, 185, 129, 0.2)",
@@ -212,13 +191,13 @@
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        setStatus("Test en cours, merci de patienter…");
+        setStatus("Test hwlatdetect en cours, merci de patienter…");
         runBtn.disabled = true;
 
         const formData = new FormData(form);
 
         try {
-            const res = await fetch("/api/cyclictest/run", {
+            const res = await fetch("/api/hwlatdetect/run", {
                 method: "POST",
                 body: formData,
             });
@@ -226,7 +205,7 @@
             const data = await res.json();
 
             if (!res.ok) {
-                setStatus(data.error || "Erreur lors de l'exécution de cyclictest", "error");
+                setStatus(data.error || "Erreur lors de l'exécution de hwlatdetect", "error");
                 cmdDetailsElt.textContent = data.command || "";
                 outputDetailsElt.textContent = (data.stdout || "") + (data.stderr ? ("\n\n[stderr]\n" + data.stderr) : "");
                 summaryElt.textContent = "";
@@ -240,8 +219,9 @@
             const latencies = data.latencies || [];
             cmdDetailsElt.textContent = data.command || "";
             outputDetailsElt.textContent = data.raw_output || "";
+
             if (latencies.length === 0) {
-                setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de cyclictest.", "error");
+                setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de hwlatdetect.", "error");
                 summaryElt.textContent = "";
                 if (chart) {
                     chart.destroy();
@@ -256,7 +236,7 @@
             summaryElt.textContent =
                 `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
 
-            setStatus("Test terminé.");
+            setStatus("Test hwlatdetect terminé.");
         } catch (err) {
             setStatus("Erreur réseau ou côté client : " + err, "error");
             summaryElt.textContent = "";

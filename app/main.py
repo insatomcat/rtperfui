@@ -3,6 +3,7 @@ from typing import List, Optional
 
 import subprocess
 import shlex
+import re
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -156,6 +157,64 @@ def parse_cyclictest_output(raw: str) -> dict:
     }
 
 
+def build_hwlatdetect_cmd(
+    duration_s: int,
+    window_us: int,
+    width_us: int,
+    threshold_us: int,
+) -> List[str]:
+    """
+    Construit une commande hwlatdetect avec quelques paramètres de base.
+    """
+    cmd = [
+        "hwlatdetect",
+        "--duration={}".format(duration_s),
+        "--window={}".format(window_us),
+        "--width={}".format(width_us),
+        "--threshold={}".format(threshold_us),
+    ]
+    return cmd
+
+
+def parse_hwlatdetect_output(raw: str) -> dict:
+    """
+    Parsing simple de la sortie de hwlatdetect.
+    On essaye d'extraire des couples inner/outer (us) et on prend le max
+    comme "latence" par échantillon.
+    """
+    latencies: List[int] = []
+    # Exemple de lignes qu'on vise (approx.) :
+    # sample 00000000, inner: 12us, outer: 15us
+    pattern = re.compile(r"inner:\s*(\d+)\s*us.*outer:\s*(\d+)\s*us", re.IGNORECASE)
+
+    for line in raw.splitlines():
+        m = pattern.search(line)
+        if not m:
+            continue
+        inner = int(m.group(1))
+        outer = int(m.group(2))
+        latencies.append(max(inner, outer))
+
+    global_min: Optional[int] = None
+    global_max: Optional[int] = None
+    global_avg: Optional[float] = None
+
+    if latencies:
+        global_min = min(latencies)
+        global_max = max(latencies)
+        global_avg = sum(latencies) / len(latencies)
+
+    return {
+        "latencies": latencies,
+        "summary": {
+            "min": global_min,
+            "max": global_max,
+            "avg": global_avg,
+        },
+        "raw": raw,
+    }
+
+
 @app.post("/api/cyclictest/run")
 async def run_cyclictest(
     duration_s: int = Form(60),
@@ -214,6 +273,76 @@ async def run_cyclictest(
         )
 
     parsed = parse_cyclictest_output(completed.stdout)
+    return JSONResponse(
+        {
+            "command": cmd_str,
+            "latencies": parsed["latencies"],
+            "summary": parsed["summary"],
+            "raw_output": parsed["raw"],
+        }
+    )
+
+
+@app.get("/hwlatdetect", response_class=HTMLResponse)
+async def hwlatdetect_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "hwlatdetect.html",
+        {
+            "request": request,
+            # Valeurs par défaut raisonnables, ajustables
+            "default_duration_s": 60,
+            "default_window_us": 1000000,  # 1 s
+            "default_width_us": 500000,  # 0,5 s
+            "default_threshold_us": 10,
+        },
+    )
+
+
+@app.post("/api/hwlatdetect/run")
+async def run_hwlatdetect(
+    duration_s: int = Form(60),
+    window_us: int = Form(1_000_000),
+    width_us: int = Form(500_000),
+    threshold_us: int = Form(10),
+):
+    cmd_list = build_hwlatdetect_cmd(
+        duration_s=duration_s,
+        window_us=window_us,
+        width_us=width_us,
+        threshold_us=threshold_us,
+    )
+
+    try:
+        completed = subprocess.run(
+            cmd_list,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return JSONResponse(
+            {
+                "error": "hwlatdetect introuvable sur le système. Veuillez installer l'outil approprié (souvent dans rt-tests ou un paquet similaire).",
+                "command": " ".join(shlex.quote(x) for x in cmd_list),
+            },
+            status_code=500,
+        )
+
+    cmd_str = " ".join(shlex.quote(x) for x in cmd_list)
+
+    if completed.returncode != 0:
+        return JSONResponse(
+            {
+                "error": "hwlatdetect a retourné un code d'erreur",
+                "returncode": completed.returncode,
+                "stderr": completed.stderr,
+                "stdout": completed.stdout,
+                "command": cmd_str,
+            },
+            status_code=500,
+        )
+
+    parsed = parse_hwlatdetect_output(completed.stdout)
     return JSONResponse(
         {
             "command": cmd_str,
