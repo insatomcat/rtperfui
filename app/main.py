@@ -163,6 +163,7 @@ def parse_cyclictest_output(raw: str) -> dict:
         histogram_buckets: List[int] = []
         # counts par thread: index 0 -> thread 0, etc.
         histogram_counts_per_thread: List[List[int]] = []
+        max_latencies_from_summary: List[int] = []
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -213,12 +214,61 @@ def parse_cyclictest_output(raw: str) -> dict:
                     p_clean = p.strip()
                     if p_clean.isdigit():
                         nums.append(int(p_clean))
+                max_latencies_from_summary = nums
                 if nums:
                     max_from_summary = max(nums)
                     global_max = max_from_summary if global_max is None else max(
                         global_max, max_from_summary
                     )
                 break
+
+    # 3) Statistiques par thread/CPU sur la base de l'histogramme
+    summary_per_thread: List[dict] = []
+    if "histogram_buckets" in locals() and "histogram_counts_per_thread" in locals():
+        for idx, counts in enumerate(histogram_counts_per_thread):
+            if not counts:
+                summary_per_thread.append(
+                    {"thread_index": idx, "min": None, "max": None, "avg": None, "total_samples": 0}
+                )
+                continue
+
+            total_samples = sum(counts)
+            if total_samples == 0:
+                summary_per_thread.append(
+                    {"thread_index": idx, "min": None, "max": None, "avg": None, "total_samples": 0}
+                )
+                continue
+
+            per_min: Optional[int] = None
+            per_max: Optional[int] = None
+            acc = 0
+            for bucket, count in zip(histogram_buckets, counts):
+                if count <= 0:
+                    continue
+                if per_min is None:
+                    per_min = bucket
+                per_max = bucket
+                acc += bucket * count
+
+            # Ajuste le max avec la ligne "# Max Latencies" si disponible
+            if max_latencies_from_summary and idx < len(max_latencies_from_summary):
+                max_from_summary = max_latencies_from_summary[idx]
+                if per_max is None or max_from_summary > per_max:
+                    per_max = max_from_summary
+
+            per_avg: Optional[float] = None
+            if total_samples > 0 and acc > 0:
+                per_avg = acc / total_samples
+
+            summary_per_thread.append(
+                {
+                    "thread_index": idx,
+                    "min": per_min,
+                    "max": per_max,
+                    "avg": per_avg,
+                    "total_samples": total_samples,
+                }
+            )
 
     return {
         "latencies": latencies,
@@ -234,6 +284,7 @@ def parse_cyclictest_output(raw: str) -> dict:
             "max": global_max,
             "avg": global_avg,
         },
+        "summary_per_thread": summary_per_thread,
         "raw": raw,
     }
 
@@ -389,6 +440,7 @@ async def run_cyclictest(
             "histogram": parsed.get("histogram"),
             "cpus_used": cpu_list,
             "summary": parsed["summary"],
+            "summary_per_thread": parsed.get("summary_per_thread"),
             "raw_output": parsed["raw"],
         }
     )

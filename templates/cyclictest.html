@@ -301,6 +301,13 @@
                             text: chartType === "bar" ? "latence (µs)" : "échantillon",
                             color: "#9ca3af",
                         },
+                        min: 0,
+                        max:
+                            chartType === "bar"
+                                ? (data.summary && typeof data.summary.max === "number"
+                                    ? data.summary.max
+                                    : (buckets.length ? Math.max(...buckets) : undefined))
+                                : undefined,
                     },
                     y: {
                         type: yScaleType,
@@ -373,8 +380,25 @@
             updateChartFromData(data);
 
             const summary = data.summary || {};
-            summaryElt.textContent =
-                `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
+            const perThread = Array.isArray(data.summary_per_thread) ? data.summary_per_thread : [];
+            const cpusUsed = Array.isArray(data.cpus_used) ? data.cpus_used : null;
+
+            if (perThread.length) {
+                const lines = perThread.map((s, idx) => {
+                    const cpuLabel = cpusUsed && cpusUsed[idx] !== undefined
+                        ? `CPU ${cpusUsed[idx]}`
+                        : `thread ${idx}`;
+                    const min = s.min ?? "?";
+                    const avg = s.avg !== null && s.avg !== undefined ? s.avg.toFixed(2) : "?";
+                    const max = s.max ?? "?";
+                    const total = s.total_samples ?? "?";
+                    return `${cpuLabel} — min: ${min} µs · avg: ${avg} µs · max: ${max} µs · samples: ${total}`;
+                });
+                summaryElt.textContent = lines.join("\n");
+            } else {
+                summaryElt.textContent =
+                    `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
+            }
 
             setStatus("Test terminé.");
         } catch (err) {
