@@ -288,7 +288,7 @@ async def run_cyclictest(
     interval_us: int = Form(200),
     priority: int = Form(90),
     policy: str = Form("fifo"),
-    distance_us: Optional[int] = Form(0),
+    distance_us: Optional[int] = Form(200),
     cpus: Optional[str] = Form(None),
 ):
     cpu_list: Optional[List[int]] = None
