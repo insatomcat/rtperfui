@@ -1,35 +1,8 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>rtperfui - systemcheck</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-<div class="max-w-5xl mx-auto py-8 px-4">
-    <header class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">rtperfui</h1>
-            <p class="text-slate-400 text-sm mt-1">Interface de test de performances temps réel</p>
-        </div>
-        <nav class="flex gap-2 text-xs">
-            <a href="/"
-               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
-                cyclictest
-            </a>
-            <a href="/hwlatdetect"
-               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
-                hwlatdetect
-            </a>
-            <a href="/systemcheck"
-               class="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
-                systemcheck
-            </a>
-        </nav>
-    </header>
+{% extends "base.html" %}
 
-    <main class="space-y-6">
+{% block title %}systemcheck{% endblock %}
+
+{% block content %}
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-2 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -52,9 +25,9 @@
             <h2 class="text-sm font-medium mb-3 text-slate-200">Rapport</h2>
             <div id="checks-container" class="space-y-2 text-xs"></div>
         </section>
-    </main>
-</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
     const runBtn = document.getElementById("run-btn");
     const statusElt = document.getElementById("status");
@@ -142,7 +115,6 @@
             runBtn.disabled = false;
         }
     });
-</script>
-</body>
-</html>
+    </script>
+{% endblock %}
 

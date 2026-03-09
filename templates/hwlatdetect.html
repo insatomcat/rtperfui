@@ -1,38 +1,13 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <title>rtperfui - hwlatdetect</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+{% extends "base.html" %}
+
+{% block title %}hwlatdetect{% endblock %}
+
+{% block head_extra %}
     <!-- Chart.js via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body class="bg-slate-950 text-slate-100 min-h-screen">
-<div class="max-w-5xl mx-auto py-8 px-4">
-    <header class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-semibold tracking-tight">rtperfui</h1>
-            <p class="text-slate-400 text-sm mt-1">Interface de test de performances temps réel</p>
-        </div>
-        <nav class="flex gap-2 text-xs">
-            <a href="/"
-               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover-border-emerald-500/40 hover-text-emerald-200">
-                cyclictest
-            </a>
-            <a href="/hwlatdetect"
-               class="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
-                hwlatdetect
-            </a>
-            <a href="/systemcheck"
-               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover-border-emerald-500/40 hover-text-emerald-200">
-                systemcheck
-            </a>
-        </nav>
-    </header>
+{% endblock %}
 
-    <main class="space-y-6">
+{% block content %}
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-4 flex items-center gap-2">
                 <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -123,9 +98,9 @@
                 </div>
             </details>
         </section>
-    </main>
-</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
     const form = document.getElementById("hwlat-form");
     const statusElt = document.getElementById("status");
@@ -319,7 +294,6 @@
             }
         }
     });
-</script>
-</body>
-</html>
+    </script>
+{% endblock %}
 

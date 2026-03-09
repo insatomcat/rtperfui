@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>rtperfui - {% block title %}{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+<div class="max-w-5xl mx-auto py-8 px-4">
+    <header class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">rtperfui</h1>
+            <p class="text-slate-400 text-sm mt-1">Interface de test de performances temps réel</p>
+        </div>
+        <nav class="flex gap-2 text-xs">
+            <a href="/"
+               class="inline-flex items-center rounded-full border px-3 py-1 font-medium
+               {% if active_tab == 'cyclictest' %}
+                    border-emerald-500/40 bg-emerald-500/10 text-emerald-300
+               {% else %}
+                    border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+               {% endif %}">
+                cyclictest
+            </a>
+            <a href="/hwlatdetect"
+               class="inline-flex items-center rounded-full border px-3 py-1 font-medium
+               {% if active_tab == 'hwlatdetect' %}
+                    border-emerald-500/40 bg-emerald-500/10 text-emerald-300
+               {% else %}
+                    border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+               {% endif %}">
+                hwlatdetect
+            </a>
+            <a href="/systemcheck"
+               class="inline-flex items-center rounded-full border px-3 py-1 font-medium
+               {% if active_tab == 'systemcheck' %}
+                    border-emerald-500/40 bg-emerald-500/10 text-emerald-300
+               {% else %}
+                    border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+               {% endif %}">
+                systemcheck
+            </a>
+        </nav>
+    </header>
+
+    <main class="space-y-6">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>
+

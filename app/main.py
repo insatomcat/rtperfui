@@ -66,6 +66,7 @@ async def index(request: Request) -> HTMLResponse:
         "cyclictest.html",
         {
             "request": request,
+            "active_tab": "cyclictest",
             "isolated_cpus": isolated_cpus,
             # Valeurs par défaut "classiques"
             "default_duration_s": 60,
@@ -719,6 +720,7 @@ async def hwlatdetect_page(request: Request) -> HTMLResponse:
         "hwlatdetect.html",
         {
             "request": request,
+            "active_tab": "hwlatdetect",
             # Valeurs par défaut raisonnables, ajustables
             "default_duration_s": 60,
             "default_window_us": 1000000,  # 1 s
@@ -789,6 +791,7 @@ async def systemcheck_page(request: Request) -> HTMLResponse:
         "systemcheck.html",
         {
             "request": request,
+            "active_tab": "systemcheck",
         },
     )
 
