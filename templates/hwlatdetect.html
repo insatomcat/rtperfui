@@ -271,9 +271,21 @@
             cmdDetailsElt.textContent = data.command || "";
             outputDetailsElt.textContent = data.raw_output || "";
 
+            const summary = data.summary || {};
+            const samplesRecorded = typeof summary.samples_recorded === "number" ? summary.samples_recorded : null;
+            const samplesExceeding = typeof summary.samples_exceeding === "number" ? summary.samples_exceeding : null;
+
             if (latencies.length === 0) {
-                setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de hwlatdetect.", "error");
-                summaryElt.textContent = "";
+                // Cas normal: aucun échantillon au-dessus du seuil (ou aucun échantillon tout court)
+                if (samplesRecorded !== null) {
+                    summaryElt.textContent =
+                        `échantillons totaux: ${samplesRecorded} · au-dessus du seuil: ${samplesExceeding ?? 0}`;
+                    setStatus("Test hwlatdetect terminé, aucune latence mesurée au-dessus du seuil.", "info");
+                } else {
+                    setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de hwlatdetect.", "error");
+                    summaryElt.textContent = "";
+                }
+
                 if (chart) {
                     chart.destroy();
                     chart = null;
@@ -284,7 +296,6 @@
 
             updateChart(latencies);
 
-            const summary = data.summary || {};
             summaryElt.textContent =
                 `min: ${summary.min ?? "?"} µs · avg: ${summary.avg ?? "?"} µs · max: ${summary.max ?? "?"} µs`;
 

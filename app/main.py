@@ -250,17 +250,40 @@ def parse_hwlatdetect_output(raw: str) -> dict:
     comme "latence" par échantillon.
     """
     latencies: List[int] = []
+    samples_recorded: Optional[int] = None
+    samples_exceeding: Optional[int] = None
+    max_latency_below_threshold: Optional[bool] = None
+
     # Exemple de lignes qu'on vise (approx.) :
     # sample 00000000, inner: 12us, outer: 15us
     pattern = re.compile(r"inner:\s*(\d+)\s*us.*outer:\s*(\d+)\s*us", re.IGNORECASE)
 
     for line in raw.splitlines():
-        m = pattern.search(line)
-        if not m:
+        stripped = line.strip()
+        if not stripped:
             continue
-        inner = int(m.group(1))
-        outer = int(m.group(2))
-        latencies.append(max(inner, outer))
+
+        # Récupération d'éventuels résumés
+        if stripped.startswith("Samples recorded:"):
+            try:
+                samples_recorded = int(stripped.split(":")[1])
+            except (ValueError, IndexError):
+                pass
+        elif stripped.startswith("Samples exceeding threshold:"):
+            try:
+                samples_exceeding = int(stripped.split(":")[1])
+            except (ValueError, IndexError):
+                pass
+        elif stripped.startswith("Max Latency:"):
+            if "Below threshold" in stripped:
+                max_latency_below_threshold = True
+
+        # Parsing des lignes de samples détaillés (inner/outer)
+        m = pattern.search(stripped)
+        if m:
+            inner = int(m.group(1))
+            outer = int(m.group(2))
+            latencies.append(max(inner, outer))
 
     global_min: Optional[int] = None
     global_max: Optional[int] = None
@@ -277,6 +300,9 @@ def parse_hwlatdetect_output(raw: str) -> dict:
             "min": global_min,
             "max": global_max,
             "avg": global_avg,
+            "samples_recorded": samples_recorded,
+            "samples_exceeding": samples_exceeding,
+            "max_below_threshold": max_latency_below_threshold,
         },
         "raw": raw,
     }
