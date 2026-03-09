@@ -2,13 +2,13 @@
 Description=rtperfui real-time test UI container
 
 [Container]
-Image=localhost/rtperfui:latest
+Image=docker.io/insatomcat/rtperfui:latest
 ContainerName=rtperfui
 PublishPort=8000:8000
 User=root
 
 # Capabilities / ulimits for real-time
-Capability=CAP_SYS_NICE
+AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
@@ -18,7 +18,7 @@ Volume=/proc:/proc:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
 
 Environment=PYTHONUNBUFFERED=1
-
+[Service]
 Restart=always
 
 [Install]

@@ -156,7 +156,7 @@ PublishPort=8000:8000
 User=root
 
 # Capabilities / ulimits for real-time
-Capability=CAP_SYS_NICE
+AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
