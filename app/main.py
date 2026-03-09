@@ -81,14 +81,15 @@ def build_cyclictest_cmd(
     interval_us: int,
     priority: int,
     policy: str,
+    distance_us: Optional[int],
     cpu_list: Optional[List[int]],
 ) -> List[str]:
     cmd = ["cyclictest"]
 
-    # Politique temps réel
-    if policy.lower() == "fifo":
-        cmd.append("-f")
-    elif policy.lower() == "rr":
+    # Politique temps réel : on évite -f qui n'est pas supporté partout.
+    # On ne force rien pour FIFO (comportement par défaut), on ne met -r
+    # que si l'utilisateur choisit SCHED_RR.
+    if policy.lower() == "rr":
         cmd.append("-r")
 
     cmd += [
@@ -104,9 +105,18 @@ def build_cyclictest_cmd(
         "90",  # histogram up to 90 us par défaut
     ]
 
+    if distance_us is not None and distance_us > 0:
+        cmd += ["-d", str(distance_us)]
+
     if cpu_list:
         cpu_str = ",".join(str(c) for c in cpu_list)
         cmd += ["-a", cpu_str]
+
+        # On utilise autant de threads (-t) que de CPUs testés,
+        # ce qui permet d'avoir un thread par CPU.
+        threads = len(cpu_list)
+        if threads > 0:
+            cmd += ["-t", str(threads)]
 
     return cmd
 
@@ -221,6 +231,7 @@ async def run_cyclictest(
     interval_us: int = Form(200),
     priority: int = Form(90),
     policy: str = Form("fifo"),
+    distance_us: Optional[int] = Form(0),
     cpus: Optional[str] = Form(None),
 ):
     cpu_list: Optional[List[int]] = None
@@ -239,6 +250,7 @@ async def run_cyclictest(
         interval_us=interval_us,
         priority=priority,
         policy=policy,
+        distance_us=distance_us,
         cpu_list=cpu_list,
     )
 

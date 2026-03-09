@@ -78,7 +78,7 @@
                     <p class="text-xs text-slate-400">Politique d'ordonnancement temps réel.</p>
                 </div>
 
-                <div class="space-y-1.5 md:col-span-2">
+                <div class="space-y-1.5">
                     <label for="cpus" class="block text-sm font-medium text-slate-200">
                         Affinité CPU
                     </label>
@@ -94,6 +94,19 @@
                         {% else %}
                             <span class="text-amber-300">aucun CPU isolé détecté, fallback sur tous les CPUs hors CPU0.</span>
                         {% endif %}
+                    </p>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label for="distance_us" class="block text-sm font-medium text-slate-200">
+                        Distance (-d, µs)
+                    </label>
+                    <input id="distance_us" name="distance_us" type="number" min="0"
+                           value="0"
+                           class="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                    <p class="text-xs text-slate-400">
+                        Option <span class="font-mono">-d</span> de cyclictest.
+                        Laisser 0 pour ne pas la passer.
                     </p>
                 </div>
 
