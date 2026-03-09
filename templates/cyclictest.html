@@ -110,13 +110,18 @@
                     </p>
                 </div>
 
-                <div class="md:col-span-2 flex items-center justify-between pt-2">
-                    <p id="status" class="text-xs text-slate-400"></p>
-                    <button type="submit"
-                            class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
-                            id="run-btn">
-                        <span>Lancer le test</span>
-                    </button>
+                <div class="md:col-span-2 flex flex-col gap-2 pt-2">
+                    <div class="flex items-center justify-between">
+                        <p id="status" class="text-xs text-slate-400"></p>
+                        <button type="submit"
+                                class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed"
+                                id="run-btn">
+                            <span>Lancer le test</span>
+                        </button>
+                    </div>
+                    <div class="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div id="progress-bar" class="h-full w-0 bg-emerald-500 transition-[width] duration-200 ease-out"></div>
+                    </div>
                 </div>
             </form>
         </section>
@@ -158,8 +163,53 @@
     const summaryElt = document.getElementById("summary");
     const cmdDetailsElt = document.getElementById("cmd-details");
     const outputDetailsElt = document.getElementById("output-details");
+    const progressBar = document.getElementById("progress-bar");
 
     let chart;
+    let progressTimer = null;
+
+    function resetProgress() {
+        if (progressTimer) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+        }
+        if (progressBar) {
+            progressBar.style.width = "0%";
+        }
+    }
+
+    function startProgress(expectedDurationSec) {
+        resetProgress();
+        if (!progressBar || !expectedDurationSec || expectedDurationSec <= 0) {
+            return;
+        }
+        const start = Date.now();
+        const end = start + expectedDurationSec * 1000;
+
+        progressTimer = setInterval(() => {
+            const now = Date.now();
+            const ratio = (now - start) / (end - start);
+            let pct = Math.max(0, Math.min(1, ratio));
+            // on laisse un peu de marge pour le temps de parsing/retour
+            if (pct > 0.95) pct = 0.95;
+            progressBar.style.width = (pct * 100).toFixed(1) + "%";
+        }, 200);
+    }
+
+    function finishProgress() {
+        if (!progressBar) return;
+        if (progressTimer) {
+            clearInterval(progressTimer);
+            progressTimer = null;
+        }
+        progressBar.style.width = "100%";
+        // petit reset après un court délai
+        setTimeout(() => {
+            if (progressBar) {
+                progressBar.style.width = "0%";
+            }
+        }, 1000);
+    }
 
     function setStatus(message, type = "info") {
         statusElt.textContent = message || "";
@@ -229,6 +279,8 @@
         runBtn.disabled = true;
 
         const formData = new FormData(form);
+        const duration = Number(formData.get("duration_s") || 0);
+        startProgress(duration);
 
         try {
             const res = await fetch("/api/cyclictest/run", {
@@ -247,6 +299,7 @@
                     chart.destroy();
                     chart = null;
                 }
+                resetProgress();
                 return;
             }
 
@@ -260,6 +313,7 @@
                     chart.destroy();
                     chart = null;
                 }
+                finishProgress();
                 return;
             }
 
@@ -277,8 +331,12 @@
                 chart.destroy();
                 chart = null;
             }
+            resetProgress();
         } finally {
             runBtn.disabled = false;
+            if (progressTimer) {
+                finishProgress();
+            }
         }
     });
 </script>
