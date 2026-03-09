@@ -1,0 +1,26 @@
+[Unit]
+Description=rtperfui real-time test UI container
+
+[Container]
+Image=localhost/rtperfui:latest
+ContainerName=rtperfui
+PublishPort=8000:8000
+User=root
+
+# Capabilities / ulimits for real-time
+Capability=CAP_SYS_NICE
+Ulimit=rtprio=99
+Ulimit=memlock=-1
+
+# Expose host kernel/sysfs/procfs needed for checks and RT tools
+Volume=/sys:/sys:ro
+Volume=/proc:/proc:ro
+Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
+
+Environment=PYTHONUNBUFFERED=1
+
+Restart=always
+
+[Install]
+WantedBy=default.target
+
