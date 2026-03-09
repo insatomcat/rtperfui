@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import subprocess
 import shlex
@@ -373,6 +373,273 @@ def parse_hwlatdetect_output(raw: str) -> dict:
     }
 
 
+def _run_cmd(cmd: List[str]) -> Dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        return {
+            "returncode": completed.returncode,
+            "stdout": completed.stdout.strip(),
+            "stderr": completed.stderr.strip(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def run_system_checks() -> List[Dict[str, Any]]:
+    checks: List[Dict[str, Any]] = []
+
+    # tuned profile
+    tuned_info = _run_cmd(["tuned-adm", "active"])
+    if "error" in tuned_info or tuned_info.get("returncode", 1) != 0:
+        status = "warn"
+        msg = "Impossible de déterminer le profil tuned (tuned-adm indisponible ?)."
+    else:
+        out = tuned_info.get("stdout", "")
+        if "Current active profile" in out and "realtime" in out:
+            status = "ok"
+            msg = out
+        else:
+            status = "warn"
+            msg = f"Profil tuned actif non temps réel ou inconnu: {out}"
+    checks.append(
+        {
+            "id": "tuned",
+            "name": "Profil tuned",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # CPU isolation
+    isolated = detect_isolated_cpus()
+    if isolated:
+        status = "ok"
+        msg = f"CPUs isolés détectés: {', '.join(map(str, isolated))}"
+    else:
+        status = "warn"
+        msg = "Aucun CPU isolé détecté (ni dans /sys/devices/system/cpu/isolated, ni via fallback)."
+    checks.append(
+        {
+            "id": "cpu_isolation",
+            "name": "Isolation CPU",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # Hyperthreading
+    smt_path = Path("/sys/devices/system/cpu/smt/active")
+    if smt_path.exists():
+        try:
+            active = smt_path.read_text().strip()
+            if active == "0":
+                status = "ok"
+                msg = "Hyperthreading désactivé (smt/active=0)."
+            else:
+                status = "warn"
+                msg = "Hyperthreading activé (smt/active!=0) – peut être défavorable au temps réel."
+        except OSError as exc:  # noqa: PERF203
+            status = "warn"
+            msg = f"Impossible de lire smt/active: {exc}"
+    else:
+        status = "info"
+        msg = "Pas d'information SMT explicite (smt/active absent)."
+    checks.append(
+        {
+            "id": "hyperthreading",
+            "name": "Hyperthreading / SMT",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # PREEMPT_RT
+    uname_info = _run_cmd(["uname", "-v"])
+    if "error" in uname_info:
+        status = "warn"
+        msg = "Impossible de récupérer uname -v."
+    else:
+        ver = uname_info.get("stdout", "")
+        if "PREEMPT_RT" in ver:
+            status = "ok"
+            msg = f"Noyau PREEMPT_RT détecté ({ver})."
+        elif "PREEMPT" in ver:
+            status = "warn"
+            msg = f"Noyau préemptible sans RT complet ({ver})."
+        else:
+            status = "warn"
+            msg = f"Noyau probablement non temps réel ({ver})."
+    checks.append(
+        {
+            "id": "preempt_rt",
+            "name": "Préemption noyau (PREEMPT_RT)",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # CMDLINE
+    cmdline_path = Path("/proc/cmdline")
+    problematic_flags: List[str] = []
+    rt_friendly_flags: List[str] = []
+    if cmdline_path.exists():
+        cmd = cmdline_path.read_text().strip()
+        if "intel_pstate=disable" in cmd or "intel_pstate=passive" in cmd:
+            rt_friendly_flags.append("intel_pstate=disable/passive")
+        if "processor.max_cstate=1" in cmd or "idle=poll" in cmd:
+            rt_friendly_flags.append("C-states limités (processor.max_cstate / idle=poll)")
+        if "nohz_full" in cmd:
+            rt_friendly_flags.append("nohz_full configuré")
+        if "rcu_nocbs" in cmd:
+            rt_friendly_flags.append("rcu_nocbs configuré")
+
+        if "intel_idle.max_cstate=0" not in cmd and "processor.max_cstate" not in cmd:
+            problematic_flags.append("Pas de limitation explicite des C-states (intel_idle/processor.max_cstate).")
+        if "lapic_timer_c2_ok" in cmd:
+            problematic_flags.append("lapic_timer_c2_ok peut introduire de la gigue sur certains matériels.")
+
+        msg_parts = [f"cmdline: {cmd}"]
+        if rt_friendly_flags:
+            msg_parts.append("Paramètres favorables RT: " + "; ".join(rt_friendly_flags))
+        if problematic_flags:
+            msg_parts.append("Points d'attention: " + "; ".join(problematic_flags))
+
+        if problematic_flags:
+            status = "warn"
+        else:
+            status = "ok"
+        msg = "\n".join(msg_parts)
+    else:
+        status = "warn"
+        msg = "/proc/cmdline introuvable."
+    checks.append(
+        {
+            "id": "cmdline",
+            "name": "Paramètres de boot (cmdline)",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # sysctl
+    sched_rt_runtime = Path("/proc/sys/kernel/sched_rt_runtime_us")
+    sched_rt_period = Path("/proc/sys/kernel/sched_rt_period_us")
+    sysctl_msgs: List[str] = []
+    status = "ok"
+    if sched_rt_runtime.exists() and sched_rt_period.exists():
+        try:
+            rt_runtime = int(sched_rt_runtime.read_text().strip())
+            rt_period = int(sched_rt_period.read_text().strip())
+            sysctl_msgs.append(f"sched_rt_runtime_us={rt_runtime}, sched_rt_period_us={rt_period}")
+            if rt_runtime >= 0 and rt_runtime < rt_period:
+                status = "warn"
+                sysctl_msgs.append("Les tâches RT ne peuvent pas utiliser 100% du CPU (runtime < period).")
+        except ValueError:
+            status = "warn"
+            sysctl_msgs.append("Valeurs sched_rt_* non numériques.")
+    else:
+        status = "warn"
+        sysctl_msgs.append("Paramètres sched_rt_* introuvables.")
+    checks.append(
+        {
+            "id": "sysctl_rt",
+            "name": "Paramètres RT (sysctl)",
+            "status": status,
+            "details": "\n".join(sysctl_msgs),
+        }
+    )
+
+    # ACPI
+    acpi_dir = Path("/sys/firmware/acpi")
+    acpi_ok = acpi_dir.exists()
+    if not acpi_ok:
+        status = "info"
+        msg = "ACPI désactivé ou non présent (peut être souhaité pour le RT)."
+    else:
+        status = "info"
+        msg = "ACPI actif; certaines configurations ACPI peuvent impacter la latence, à vérifier."
+    checks.append(
+        {
+            "id": "acpi",
+            "name": "ACPI",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    # Hugepages / THP
+    huge_nr = Path("/proc/sys/vm/nr_hugepages")
+    thp = Path("/sys/kernel/mm/transparent_hugepage/enabled")
+    hp_msgs: List[str] = []
+    if huge_nr.exists():
+        try:
+            nr = int(huge_nr.read_text().strip())
+            hp_msgs.append(f"nr_hugepages={nr}")
+        except ValueError:
+            hp_msgs.append("nr_hugepages non numérique.")
+    if thp.exists():
+        val = thp.read_text().strip()
+        hp_msgs.append(f"transparent_hugepage.enabled={val}")
+        if "[never]" not in val:
+            status = "warn"
+            hp_msgs.append("THP n'est pas complètement désactivé ([never] recommandé pour RT).")
+        else:
+            status = "ok"
+    else:
+        status = "info"
+        hp_msgs.append("Transparent Huge Pages (THP) non détecté.")
+    checks.append(
+        {
+            "id": "hugepages",
+            "name": "Hugepages / Transparent Huge Pages",
+            "status": status,
+            "details": "\n".join(hp_msgs),
+        }
+    )
+
+    # IRQ affinity (vue générale)
+    irq_dir = Path("/proc/irq")
+    irq_msg = "Affinité IRQ non inspectée (réduction pour la première version du check)."
+    if irq_dir.exists():
+        irq_msg = (
+            "Les fichiers /proc/irq/*/smp_affinity décrivent l'affinité des IRQ. "
+            "Une configuration affinée vers les CPUs non-RT est recommandée."
+        )
+    checks.append(
+        {
+            "id": "irq_affinity",
+            "name": "Affinité IRQ",
+            "status": "info",
+            "details": irq_msg,
+        }
+    )
+
+    # PTP / synchronisation temps
+    ptp_dir = Path("/sys/class/ptp")
+    if ptp_dir.exists() and any(ptp_dir.iterdir()):
+        status = "info"
+        msg = "Horloge(s) PTP détectée(s) dans /sys/class/ptp. Vérifier ptp4l/phc2sys pour la synchronisation."
+    else:
+        status = "info"
+        msg = "Aucune horloge PTP détectée dans /sys/class/ptp."
+    checks.append(
+        {
+            "id": "ptp",
+            "name": "Synchronisation PTP",
+            "status": status,
+            "details": msg,
+        }
+    )
+
+    return checks
+
+
 @app.post("/api/cyclictest/run")
 async def run_cyclictest(
     duration_s: int = Form(60),
@@ -514,6 +781,22 @@ async def run_hwlatdetect(
             "raw_output": parsed["raw"],
         }
     )
+
+
+@app.get("/systemcheck", response_class=HTMLResponse)
+async def systemcheck_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(
+        "systemcheck.html",
+        {
+            "request": request,
+        },
+    )
+
+
+@app.get("/api/systemcheck/run")
+async def systemcheck_run():
+    checks = run_system_checks()
+    return JSONResponse({"checks": checks})
 
 
 if __name__ == "__main__":

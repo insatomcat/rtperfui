@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>rtperfui - systemcheck</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+<div class="max-w-5xl mx-auto py-8 px-4">
+    <header class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-semibold tracking-tight">rtperfui</h1>
+            <p class="text-slate-400 text-sm mt-1">Interface de test de performances temps réel</p>
+        </div>
+        <nav class="flex gap-2 text-xs">
+            <a href="/"
+               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
+                cyclictest
+            </a>
+            <a href="/hwlatdetect"
+               class="inline-flex items-center rounded-full border border-slate-700/80 bg-slate-900/80 px-3 py-1 font-medium text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200">
+                hwlatdetect
+            </a>
+            <a href="/systemcheck"
+               class="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 font-medium text-emerald-300">
+                systemcheck
+            </a>
+        </nav>
+    </header>
+
+    <main class="space-y-6">
+        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
+            <h2 class="text-lg font-medium mb-2 flex items-center gap-2">
+                <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Vérifications système temps réel
+            </h2>
+            <p class="text-xs text-slate-400 mb-4">
+                Un clic lance une série de checks sur la configuration de la machine hôte
+                (noyau, boot, CPU, hugepages, PTP, etc.) et produit un rapport synthétique.
+            </p>
+            <div class="flex items-center justify-between gap-4">
+                <p id="status" class="text-xs text-slate-400"></p>
+                <button id="run-btn"
+                        class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed">
+                    Lancer les checks
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-4 shadow-xl shadow-black/40">
+            <h2 class="text-sm font-medium mb-3 text-slate-200">Rapport</h2>
+            <div id="checks-container" class="space-y-2 text-xs"></div>
+        </section>
+    </main>
+</div>
+
+<script>
+    const runBtn = document.getElementById("run-btn");
+    const statusElt = document.getElementById("status");
+    const checksContainer = document.getElementById("checks-container");
+
+    function setStatus(message, type = "info") {
+        statusElt.textContent = message || "";
+        statusElt.className = "text-xs " + (type === "error" ? "text-rose-400" : "text-slate-400");
+    }
+
+    function badgeForStatus(status) {
+        const base = "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium";
+        switch (status) {
+            case "ok":
+                return base + " bg-emerald-500/10 text-emerald-300 border border-emerald-500/40";
+            case "warn":
+                return base + " bg-amber-500/10 text-amber-300 border border-amber-500/40";
+            case "fail":
+                return base + " bg-rose-500/10 text-rose-300 border border-rose-500/40";
+            default:
+                return base + " bg-slate-700/60 text-slate-200 border border-slate-600/80";
+        }
+    }
+
+    function labelForStatus(status) {
+        switch (status) {
+            case "ok": return "OK";
+            case "warn": return "ATTENTION";
+            case "fail": return "ÉCHEC";
+            default: return "INFO";
+        }
+    }
+
+    function renderChecks(checks) {
+        checksContainer.innerHTML = "";
+        checks.forEach(check => {
+            const item = document.createElement("div");
+            item.className = "rounded-lg border border-slate-800/80 bg-slate-950/40 px-3 py-2";
+
+            const header = document.createElement("div");
+            header.className = "flex items-center justify-between gap-2 mb-1";
+
+            const nameElt = document.createElement("span");
+            nameElt.className = "text-slate-100 text-xs font-medium";
+            nameElt.textContent = check.name || check.id;
+
+            const badge = document.createElement("span");
+            badge.className = badgeForStatus(check.status);
+            badge.textContent = labelForStatus(check.status);
+
+            header.appendChild(nameElt);
+            header.appendChild(badge);
+
+            const details = document.createElement("pre");
+            details.className = "mt-1 whitespace-pre-wrap break-words text-[11px] text-slate-400";
+            details.textContent = check.details || "";
+
+            item.appendChild(header);
+            item.appendChild(details);
+
+            checksContainer.appendChild(item);
+        });
+    }
+
+    runBtn.addEventListener("click", async () => {
+        runBtn.disabled = true;
+        setStatus("Checks en cours…");
+        checksContainer.innerHTML = "";
+
+        try {
+            const res = await fetch("/api/systemcheck/run");
+            const data = await res.json();
+
+            if (!res.ok) {
+                setStatus(data.error || "Erreur lors des vérifications système.", "error");
+                return;
+            }
+
+            const checks = data.checks || [];
+            renderChecks(checks);
+            setStatus(`Checks terminés (${checks.length} tests).`);
+        } catch (err) {
+            setStatus("Erreur réseau ou côté client : " + err, "error");
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+</script>
+</body>
+</html>
+
