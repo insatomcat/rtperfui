@@ -128,7 +128,7 @@
 
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-medium">Latences observées (Max par échantillon)</h2>
+                <h2 class="text-lg font-medium">Histogramme des latences (échelle log)</h2>
                 <div id="summary" class="text-xs text-slate-400"></div>
             </div>
             <div class="h-64 md:h-80">
@@ -216,26 +216,49 @@
         statusElt.className = "text-xs " + (type === "error" ? "text-rose-400" : "text-slate-400");
     }
 
-    function updateChart(latencies) {
+    function updateChartFromData(data) {
         const ctx = document.getElementById("latency-chart").getContext("2d");
-        const labels = latencies.map((_, i) => i + 1);
+
+        const histogram = data.histogram || {};
+        const buckets = Array.isArray(histogram.buckets) ? histogram.buckets : [];
+        const counts = Array.isArray(histogram.counts) ? histogram.counts : [];
+
+        let chartType = "bar";
+        let labels;
+        let datasetData;
+        let yScaleType = "logarithmic";
+        let yLabel = "Nombre d'échantillons (log)";
+
+        if (buckets.length && counts.length && buckets.length === counts.length) {
+            // Affichage histogramme classique: X = latence (µs), Y = nombre d'échantillons (log)
+            labels = buckets;
+            datasetData = counts;
+        } else {
+            // Fallback: on affiche la série brute de latences max sous forme de courbe linéaire
+            const latencies = data.latencies || [];
+            labels = latencies.map((_, i) => i + 1);
+            datasetData = latencies;
+            chartType = "line";
+            yScaleType = "linear";
+            yLabel = "latence (µs)";
+        }
 
         if (chart) {
             chart.destroy();
         }
 
         chart = new Chart(ctx, {
-            type: "line",
+            type: chartType,
             data: {
                 labels,
                 datasets: [
                     {
-                        label: "latence max (µs)",
-                        data: latencies,
+                        label: chartType === "bar" ? "latence (µs)" : "latence max (µs)",
+                        data: datasetData,
                         borderColor: "rgb(16, 185, 129)",
                         backgroundColor: "rgba(16, 185, 129, 0.2)",
-                        pointRadius: 0,
-                        tension: 0.15,
+                        pointRadius: chartType === "line" ? 0 : 0,
+                        tension: chartType === "line" ? 0.15 : 0,
                     },
                 ],
             },
@@ -253,11 +276,12 @@
                         },
                     },
                     y: {
+                        type: yScaleType,
                         ticks: { color: "#9ca3af" },
                         grid: { color: "rgba(148, 163, 184, 0.1)" },
                         title: {
                             display: true,
-                            text: "latence (µs)",
+                            text: yLabel,
                             color: "#9ca3af",
                         },
                     },
@@ -303,10 +327,12 @@
                 return;
             }
 
-            const latencies = data.latencies || [];
             cmdDetailsElt.textContent = data.command || "";
             outputDetailsElt.textContent = data.raw_output || "";
-            if (latencies.length === 0) {
+            const latencies = data.latencies || [];
+
+            if ((!data.histogram || !Array.isArray(data.histogram.buckets) || data.histogram.buckets.length === 0) &&
+                latencies.length === 0) {
                 setStatus("Test terminé mais aucune latence n'a été parsée, vérifiez la sortie de cyclictest.", "error");
                 summaryElt.textContent = "";
                 if (chart) {
@@ -317,7 +343,7 @@
                 return;
             }
 
-            updateChart(latencies);
+            updateChartFromData(data);
 
             const summary = data.summary || {};
             summaryElt.textContent =

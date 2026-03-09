@@ -160,6 +160,8 @@ def parse_cyclictest_output(raw: str) -> dict:
     # 2) Si on n'a rien trouvé, fallback sur le format "histogramme" Debian.
     if not latencies:
         histogram_latencies: List[int] = []
+        histogram_buckets: List[int] = []
+        histogram_counts: List[int] = []
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -181,6 +183,8 @@ def parse_cyclictest_output(raw: str) -> dict:
             # On ne retient que les buckets où au moins un thread a vu cette latence.
             if total > 0:
                 histogram_latencies.append(bucket)
+                histogram_buckets.append(bucket)
+                histogram_counts.append(total)
 
         if histogram_latencies:
             latencies = histogram_latencies
@@ -207,6 +211,10 @@ def parse_cyclictest_output(raw: str) -> dict:
 
     return {
         "latencies": latencies,
+        "histogram": {
+            "buckets": histogram_buckets if "histogram_buckets" in locals() else [],
+            "counts": histogram_counts if "histogram_counts" in locals() else [],
+        },
         "summary": {
             "min": global_min,
             "max": global_max,
@@ -338,6 +346,7 @@ async def run_cyclictest(
         {
             "command": cmd_str,
             "latencies": parsed["latencies"],
+            "histogram": parsed.get("histogram"),
             "summary": parsed["summary"],
             "raw_output": parsed["raw"],
         }
