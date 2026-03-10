@@ -155,13 +155,16 @@ ContainerName=rtperfui
 PublishPort=8000:8000
 User=root
 
-# Capabilities / ulimits for real-time
+# Run the container fully privileged so hwlatdetect can access debugfs/tracing
+Privileged=true
+
+# Optional: keep explicit RT-related ulimits
 AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
 # Expose host kernel/sysfs/procfs needed for checks and RT tools
-Volume=/sys:/sys:ro
+Volume=/sys:/sys
 Volume=/proc:/proc:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
 
