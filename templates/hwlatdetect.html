@@ -2,11 +2,6 @@
 
 {% block title %}hwlatdetect{% endblock %}
 
-{% block head_extra %}
-    <!-- Chart.js via CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-{% endblock %}
-
 {% block content %}
         <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
             <h2 class="text-lg font-medium mb-4 flex items-center gap-2">
@@ -71,14 +66,9 @@
             </form>
         </section>
 
-        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-lg font-medium">{{ t(lang, "hwlat_chart_title") }}</h2>
-                <div id="summary" class="text-xs text-slate-400"></div>
-            </div>
-            <div class="h-64 md:h-80">
-                <canvas id="latency-chart"></canvas>
-            </div>
+        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40 text-xs text-slate-200">
+            <h2 class="text-sm font-medium mb-3">{{ t(lang, "hwlat_chart_title") }}</h2>
+            <div id="summary" class="whitespace-pre-line"></div>
         </section>
 
         <section class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 font-mono">
@@ -134,7 +124,6 @@
         },
     }[lang] || {};
 
-    let chart;
     let progressTimer = null;
 
     function resetProgress() {
@@ -277,9 +266,10 @@
             const summary = data.summary || {};
             const samplesRecorded = typeof summary.samples_recorded === "number" ? summary.samples_recorded : null;
             const samplesExceeding = typeof summary.samples_exceeding === "number" ? summary.samples_exceeding : null;
+            const events = Array.isArray(data.events) ? data.events : [];
 
-            if (latencies.length === 0) {
-                // Cas normal: aucun échantillon au-dessus du seuil (ou aucun échantillon tout court)
+            // Aucun échantillon interprétable
+            if (latencies.length === 0 && events.length === 0) {
                 if (samplesRecorded !== null) {
                     summaryElt.textContent =
                         `${MSG.noSamplesTotalPrefix || ""} ${samplesRecorded} ${MSG.noSamplesMiddle || ""} ${samplesExceeding ?? 0}`;
@@ -288,25 +278,97 @@
                     setStatus(MSG.parseWarn || "", "error");
                     summaryElt.textContent = "";
                 }
-
-                if (chart) {
-                    chart.destroy();
-                    chart = null;
-                }
                 finishProgress();
                 return;
             }
-
-            updateChart(latencies);
 
             const lineTmpl = "{{ t(lang, 'summary_line') }}";
             const min = summary.min ?? "?";
             const avg = summary.avg ?? "?";
             const max = summary.max ?? "?";
-            summaryElt.textContent = lineTmpl
+            const headerText = lineTmpl
                 .replace("{min}", String(min))
                 .replace("{avg}", String(avg))
                 .replace("{max}", String(max));
+
+            // ligne de résumé
+            const headerEl = document.createElement("p");
+            headerEl.className = "text-slate-300";
+            headerEl.textContent = headerText;
+            summaryElt.appendChild(headerEl);
+
+            if (events.length > 0) {
+                const intro = document.createElement("p");
+                intro.className = "mt-3 font-semibold";
+                const count = events.length;
+                intro.textContent = lang === "fr"
+                    ? `${count} dépassement(s) du seuil ont été enregistrés :`
+                    : `${count} threshold exceedance(s) were recorded:`;
+                summaryElt.appendChild(intro);
+
+                events.forEach((ev, idx) => {
+                    const block = document.createElement("div");
+                    block.className = "mt-3 border-l border-slate-700 pl-3 space-y-1";
+
+                    const label =
+                        lang === "fr"
+                            ? (["①","②","③","④","⑤","⑥","⑦","⑧","⑨"][idx] || `${idx + 1})`)
+                            : `${idx + 1})`;
+                    const inner = ev.inner ?? 0;
+                    const outer = ev.outer ?? 0;
+                    const cpu = ev.cpu ?? "?";
+                    const ts = ev.ts ?? null;
+                    const latency = ev.latency ?? Math.max(inner, outer);
+
+                    const title = document.createElement("p");
+                    title.className = "font-semibold text-slate-100";
+                    if (inner > 0) {
+                        title.textContent = lang === "fr"
+                            ? `${label} inner:${inner} µs, cpu:${cpu} — latence interne (pendant la période de mesure active)`
+                            : `${label} inner:${inner} µs, cpu:${cpu} — internal latency (during active measurement window)`;
+                    } else {
+                        title.textContent = lang === "fr"
+                            ? `${label} outer:${outer} µs, cpu:${cpu} — latence externe (pendant la période de repos)`
+                            : `${label} outer:${outer} µs, cpu:${cpu} — external latency (during idle/non-sampling period)`;
+                    }
+                    block.appendChild(title);
+
+                    const p1 = document.createElement("p");
+                    p1.className = "text-slate-300";
+                    if (inner > 0) {
+                        p1.textContent = lang === "fr"
+                            ? `Le CPU ${cpu} a été "gelé" ${latency} µs par quelque chose en dehors du contrôle de l'OS.`
+                            : `CPU ${cpu} was "frozen" for ${latency} µs by something outside the OS scheduler.`;
+                    } else {
+                        p1.textContent = lang === "fr"
+                            ? `Le CPU ${cpu} a subi un délai de ${latency} µs entre la fin du repos et la reprise de la mesure.`
+                            : `CPU ${cpu} experienced a ${latency} µs delay between idle end and measurement resumption.`;
+                    }
+                    block.appendChild(p1);
+
+                    const p2 = document.createElement("p");
+                    p2.className = "text-slate-400";
+                    if (inner > 0) {
+                        p2.textContent = lang === "fr"
+                            ? `Ce type de latence indique une pause inexpliquée au milieu d'une tâche temps-réel.`
+                            : `This type of latency indicates an unexplained pause in the middle of a real-time task.`;
+                    } else {
+                        p2.textContent = lang === "fr"
+                            ? `Ce dépassement apparaît pendant une phase de repos CPU et suggère une perturbation matérielle (SMI, firmware, etc.).`
+                            : `This exceedance occurs during a CPU idle phase and suggests a hardware disturbance (SMI, firmware, etc.).`;
+                    }
+                    block.appendChild(p2);
+
+                    if (ts !== null) {
+                        const pTs = document.createElement("p");
+                        pTs.className = "text-slate-500 text-[11px]";
+                        pTs.textContent = `ts ≈ ${ts}`;
+                        block.appendChild(pTs);
+                    }
+
+                    summaryElt.appendChild(block);
+                });
+            }
 
             setStatus(MSG.done || "");
         } catch (err) {

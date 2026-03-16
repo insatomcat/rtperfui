@@ -482,13 +482,19 @@ def parse_hwlatdetect_output(raw: str) -> dict:
     comme "latence" par échantillon.
     """
     latencies: List[int] = []
+    events: List[Dict[str, Any]] = []
     samples_recorded: Optional[int] = None
     samples_exceeding: Optional[int] = None
     max_latency_below_threshold: Optional[bool] = None
 
     # Exemple de lignes qu'on vise (approx.) :
     # sample 00000000, inner: 12us, outer: 15us
-    pattern = re.compile(r"inner:\s*(\d+)\s*us.*outer:\s*(\d+)\s*us", re.IGNORECASE)
+    # ts: 1773668004.982201597, inner:0, outer:13, cpu:5
+    pattern = re.compile(r"inner:\s*(\d+)(?:\s*us)?\s*,?\s*outer:\s*(\d+)(?:\s*us)?", re.IGNORECASE)
+    ts_cpu_pattern = re.compile(
+        r"ts:\s*([0-9]+\.[0-9]+)\s*,\s*inner:\s*(\d+)(?:\s*us)?\s*,\s*outer:\s*(\d+)(?:\s*us)?\s*,\s*cpu:\s*(\d+)",
+        re.IGNORECASE,
+    )
 
     for line in raw.splitlines():
         stripped = line.strip()
@@ -510,7 +516,27 @@ def parse_hwlatdetect_output(raw: str) -> dict:
             if "Below threshold" in stripped:
                 max_latency_below_threshold = True
 
-        # Parsing des lignes de samples détaillés (inner/outer)
+        # Parsing des lignes de samples détaillés (inner/outer + éventuellement ts/cpu)
+        m_ts = ts_cpu_pattern.search(stripped)
+        if m_ts:
+            ts = float(m_ts.group(1))
+            inner = int(m_ts.group(2))
+            outer = int(m_ts.group(3))
+            cpu = int(m_ts.group(4))
+            latency = max(inner, outer)
+            latencies.append(latency)
+            events.append(
+                {
+                    "ts": ts,
+                    "inner": inner,
+                    "outer": outer,
+                    "cpu": cpu,
+                    "latency": latency,
+                }
+            )
+            continue
+
+        # Fallback: lignes sans ts/cpu explicites
         m = pattern.search(stripped)
         if m:
             inner = int(m.group(1))
@@ -536,6 +562,7 @@ def parse_hwlatdetect_output(raw: str) -> dict:
             "samples_exceeding": samples_exceeding,
             "max_below_threshold": max_latency_below_threshold,
         },
+        "events": events,
         "raw": raw,
     }
 
@@ -937,6 +964,7 @@ async def run_hwlatdetect(
             "returncode": completed.returncode,
             "latencies": parsed["latencies"],
             "summary": parsed["summary"],
+            "events": parsed.get("events"),
             "raw_output": parsed["raw"],
         }
     )
