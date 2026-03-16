@@ -930,22 +930,11 @@ async def run_hwlatdetect(
 
     cmd_str = " ".join(shlex.quote(x) for x in cmd_list)
 
-    if completed.returncode != 0:
-        return JSONResponse(
-            {
-                "error": "hwlatdetect a retourné un code d'erreur",
-                "returncode": completed.returncode,
-                "stderr": completed.stderr,
-                "stdout": completed.stdout,
-                "command": cmd_str,
-            },
-            status_code=500,
-        )
-
     parsed = parse_hwlatdetect_output(completed.stdout)
     return JSONResponse(
         {
             "command": cmd_str,
+            "returncode": completed.returncode,
             "latencies": parsed["latencies"],
             "summary": parsed["summary"],
             "raw_output": parsed["raw"],
