@@ -131,7 +131,7 @@ podman run --rm -p 8000:8000 \
   --cap-add=SYS_NICE \
   --ulimit rtprio=99 \
   --ulimit memlock=-1 \
-  -v /sys:/sys:ro \
+  -v /sys:/sys \
   -v /proc:/proc:ro \
   -v /dev/cpu_dma_latency:/dev/cpu_dma_latency \
   rtperfui:latest
@@ -150,7 +150,7 @@ Contents:
 Description=rtperfui real-time test UI container
 
 [Container]
-Image=localhost/rtperfui:latest
+Image=docker.io/insatomcat/rtperfui
 ContainerName=rtperfui
 PublishPort=8000:8000
 User=root
