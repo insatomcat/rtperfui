@@ -588,19 +588,38 @@ def _run_cmd(cmd: List[str]) -> Dict[str, Any]:
 def run_system_checks() -> List[Dict[str, Any]]:
     checks: List[Dict[str, Any]] = []
 
-    # tuned profile
-    tuned_info = _run_cmd(["tuned-adm", "active"])
-    if "error" in tuned_info or tuned_info.get("returncode", 1) != 0:
-        status = "warn"
-        msg = "Impossible de déterminer le profil tuned (tuned-adm indisponible ?)."
-    else:
-        out = tuned_info.get("stdout", "")
-        if "Current active profile" in out and "realtime" in out:
+    # tuned profile (host-level tuning daemon)
+    tuned_profile: Optional[str] = None
+    # 1) Try from well-known files (works in container if /run or /etc tuned dirs are bind-mounted)
+    for p in (Path("/run/tuned/active_profile"), Path("/etc/tuned/active_profile")):
+        if p.exists():
+            try:
+                tuned_profile = p.read_text().strip()
+                break
+            except OSError:
+                continue
+
+    if tuned_profile:
+        if "realtime" in tuned_profile or "seapath" in tuned_profile:
             status = "ok"
-            msg = out
+            msg = f"Profil tuned actif: {tuned_profile}"
         else:
             status = "warn"
-            msg = f"Profil tuned actif non temps réel ou inconnu: {out}"
+            msg = f"Profil tuned actif non temps réel ou inconnu: {tuned_profile}"
+    else:
+        # 2) Fallback: tuned-adm (bare-metal host case). Missing tool is informational, not an error.
+        tuned_info = _run_cmd(["tuned-adm", "active"])
+        if "error" in tuned_info or tuned_info.get("returncode", 1) != 0:
+            status = "info"
+            msg = "Impossible de déterminer le profil tuned (ni fichiers active_profile, ni tuned-adm disponibles)."
+        else:
+            out = tuned_info.get("stdout", "")
+            if "Current active profile" in out and ("realtime" in out or "seapath" in out):
+                status = "ok"
+                msg = out
+            else:
+                status = "warn"
+                msg = f"Profil tuned actif non temps réel ou inconnu: {out}"
     checks.append(
         {
             "id": "tuned",

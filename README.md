@@ -163,10 +163,12 @@ AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
-# Expose host kernel/sysfs/procfs needed for checks and RT tools
+# Expose host kernel/sysfs/procfs and tuned state for checks and RT tools
 Volume=/sys:/sys
 Volume=/proc:/proc:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
+Volume=/run/tuned:/run/tuned:ro
+Volume=/etc/tuned:/etc/tuned:ro
 
 Environment=PYTHONUNBUFFERED=1
 
