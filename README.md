@@ -128,10 +128,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ```bash
 podman run --rm -p 8000:8000 \
+  --privileged \
   --cap-add=SYS_NICE \
   --ulimit rtprio=99 \
   --ulimit memlock=-1 \
   -v /sys:/sys \
+  -v /run/tuned:/run/tuned:ro \
+  -v /etc/tuned:/etc/tuned:ro \
   -v /proc:/proc:ro \
   -v /dev/cpu_dma_latency:/dev/cpu_dma_latency \
   rtperfui:latest
@@ -150,28 +153,26 @@ Contents:
 Description=rtperfui real-time test UI container
 
 [Container]
-Image=docker.io/insatomcat/rtperfui
+Image=docker.io/insatomcat/rtperfui:latest
 ContainerName=rtperfui
 PublishPort=8000:8000
 User=root
 
-# Run the container fully privileged so hwlatdetect can access debugfs/tracing
-Privileged=true
-
-# Optional: keep explicit RT-related ulimits
+# Capabilities / ulimits for real-time
+PodmanArgs=--privileged
 AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
-# Expose host kernel/sysfs/procfs and tuned state for checks and RT tools
+# Expose host kernel/sysfs/procfs needed for checks and RT tools
 Volume=/sys:/sys
-Volume=/proc:/proc:ro
-Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
 Volume=/run/tuned:/run/tuned:ro
 Volume=/etc/tuned:/etc/tuned:ro
+Volume=/proc:/proc:ro
+Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
 
 Environment=PYTHONUNBUFFERED=1
-
+[Service]
 Restart=always
 
 [Install]
