@@ -288,6 +288,37 @@ def build_cyclictest_cmd(
     return cmd
 
 
+def parse_cpu_list(expr: str) -> List[int]:
+    """
+    Parse une expression CPU du type:
+    - "1,2,3"
+    - "1-3"
+    - "1-3,8,10-12"
+    """
+    cpus: List[int] = []
+    for part in expr.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start_s, end_s = part.split("-", 1)
+            start_s = start_s.strip()
+            end_s = end_s.strip()
+            if not start_s.isdigit() or not end_s.isdigit():
+                raise ValueError("invalid range")
+            start = int(start_s)
+            end = int(end_s)
+            if end < start:
+                raise ValueError("invalid range order")
+            cpus.extend(range(start, end + 1))
+        else:
+            if not part.isdigit():
+                raise ValueError("invalid cpu id")
+            cpus.append(int(part))
+    # unique + tri
+    return sorted(set(cpus))
+
+
 def parse_cyclictest_output(raw: str) -> dict:
     """
     Parse grossièrement la sortie standard de cyclictest.
@@ -865,7 +896,7 @@ async def run_cyclictest(
     cpu_list: Optional[List[int]] = None
     if cpus:
         try:
-            cpu_list = [int(c.strip()) for c in cpus.split(",") if c.strip()]
+            cpu_list = parse_cpu_list(cpus)
         except ValueError:
             return JSONResponse(
                 {"error": "Liste de CPUs invalide"}, status_code=400
