@@ -978,31 +978,127 @@ def _get_all_cpus() -> List[int]:
     return sorted(set(cpus))
 
 
+CIB_PATHS = [
+    Path("/var/lib/pacemaker/cib/cib.xml"),
+    Path("/var/lib/heartbeat/crm/cib.xml"),
+]
+
+
+def _is_corosync_running() -> bool:
+    """Check if corosync process is visible in /proc (host /proc must be mounted)."""
+    try:
+        for pid_dir in Path("/proc").iterdir():
+            if not pid_dir.name.isdigit():
+                continue
+            comm = pid_dir / "comm"
+            if comm.exists() and comm.read_text().strip() == "corosync":
+                return True
+    except OSError:
+        pass
+    return False
+
+
+def _cib_resource_host(status_elt: Any, resource_id: str) -> Optional[str]:
+    """Return the node name where resource_id is currently running, from CIB status."""
+    if status_elt is None:
+        return None
+    for ns in status_elt.findall("node_state"):
+        node_name = ns.get("uname") or ns.get("id", "?")
+        lrm = ns.find("lrm")
+        if lrm is None:
+            continue
+        lrm_resources = lrm.find("lrm_resources")
+        if lrm_resources is None:
+            continue
+        for lrm_rsc in lrm_resources.findall("lrm_resource"):
+            if lrm_rsc.get("id") != resource_id:
+                continue
+            ops = sorted(lrm_rsc.findall("lrm_rsc_op"), key=lambda o: int(o.get("call-id", 0)))
+            if not ops:
+                continue
+            last = ops[-1]
+            op = last.get("operation", "")
+            rc = last.get("rc-code", "1")
+            if rc == "0" and op in ("start", "monitor"):
+                return node_name
+    return None
+
+
 def _get_cluster_info() -> Dict[str, Any]:
-    result = _run_host_cmd(["crm", "status"])
-    if "error" in result or result.get("returncode", 1) != 0:
+    # 1. Detect cluster mode via corosync process or corosync.conf
+    is_cluster = _is_corosync_running() or Path("/etc/corosync/corosync.conf").exists()
+
+    if not is_cluster:
+        return {"mode": "standalone", "online_nodes": [], "vms": []}
+
+    # 2. Read the CIB XML (must be mounted read-only in the container)
+    cib_xml: Optional[str] = None
+    for p in CIB_PATHS:
+        if p.exists():
+            try:
+                cib_xml = p.read_text()
+                break
+            except OSError:
+                pass
+
+    if not cib_xml:
         return {
-            "mode": "standalone",
-            "error": result.get("error") or result.get("stderr", "crm non disponible"),
+            "mode": "cluster",
+            "error": (
+                "Cluster détecté (corosync actif) mais CIB inaccessible. "
+                "Ajouter dans rtperfui.container : "
+                "Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro"
+            ),
             "online_nodes": [],
             "vms": [],
         }
 
-    output = result.get("stdout", "")
-    dc_m = re.search(r"Current DC:\s+(\S+)", output)
-    dc = dc_m.group(1) if dc_m else None
+    # 3. Parse CIB XML
+    try:
+        root = ET.fromstring(cib_xml)
+    except ET.ParseError as exc:
+        return {"mode": "cluster", "error": f"CIB XML parse error: {exc}", "online_nodes": [], "vms": []}
 
-    nodes_m = re.search(r"Online:\s*\[\s*([^\]]+)\]", output)
-    online_nodes = nodes_m.group(1).split() if nodes_m else []
+    # Online nodes — node_state with crmd="online" and join="member"
+    status_elt = root.find("status")
+    online_nodes: List[str] = []
+    if status_elt is not None:
+        for ns in status_elt.findall("node_state"):
+            if ns.get("crmd") == "online" and ns.get("join") == "member":
+                name = ns.get("uname") or ns.get("id", "?")
+                online_nodes.append(name)
 
-    vms = []
-    for m in re.finditer(
-        r"\*\s+(\S+)\s+\(ocf:seapath:VirtualDomain\):\s+Started\s+(\S+)", output
-    ):
-        vms.append({"name": m.group(1), "host": m.group(2)})
+    # DC — map dc-uuid to a node uname via configuration/nodes
+    dc: Optional[str] = None
+    dc_uuid = root.get("dc-uuid")
+    if dc_uuid:
+        config = root.find("configuration")
+        nodes_elt = config.find("nodes") if config is not None else None
+        if nodes_elt is not None:
+            for node in nodes_elt.findall("node"):
+                if node.get("id") == dc_uuid:
+                    dc = node.get("uname") or dc_uuid
+                    break
+        if dc is None:
+            dc = dc_uuid
+
+    # VirtualDomain resources — find started ones from CIB status
+    vms: List[Dict] = []
+    config = root.find("configuration")
+    if config is not None:
+        resources = config.find("resources")
+        if resources is not None:
+            for prim in resources.iter("primitive"):
+                if (prim.get("class") == "ocf"
+                        and prim.get("provider") == "seapath"
+                        and prim.get("type") == "VirtualDomain"):
+                    vm_id = prim.get("id", "?")
+                    host = _cib_resource_host(status_elt, vm_id)
+                    if host:
+                        vms.append({"name": vm_id, "host": host})
 
     return {
-        "mode": "cluster" if (online_nodes or dc) else "standalone",
+        "mode": "cluster",
         "dc": dc,
         "online_nodes": online_nodes,
         "vms": vms,
