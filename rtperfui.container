@@ -13,12 +13,19 @@ AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
-# Expose host kernel/sysfs/procfs needed for checks and RT tools
+# Expose host kernel/sysfs needed for checks and RT tools
 Volume=/sys:/sys
 Volume=/run/tuned:/run/tuned:ro
 Volume=/etc/tuned:/etc/tuned:ro
-Volume=/proc:/proc:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
+
+# Specific /proc paths — do NOT mount /proc wholesale (breaks runc network init)
+Volume=/proc/cmdline:/proc/cmdline:ro
+Volume=/proc/cpuinfo:/proc/cpuinfo:ro
+Volume=/proc/meminfo:/proc/meminfo:ro
+Volume=/proc/sys/kernel:/proc/sys/kernel:ro
+Volume=/proc/sys/vm:/proc/sys/vm:ro
+Volume=/proc/irq:/proc/irq:ro
 
 # Pacemaker CIB — needed for cluster status (Seapath tab)
 Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro

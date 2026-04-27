@@ -984,19 +984,6 @@ CIB_PATHS = [
 ]
 
 
-def _is_corosync_running() -> bool:
-    """Check if corosync process is visible in /proc (host /proc must be mounted)."""
-    try:
-        for pid_dir in Path("/proc").iterdir():
-            if not pid_dir.name.isdigit():
-                continue
-            comm = pid_dir / "comm"
-            if comm.exists() and comm.read_text().strip() == "corosync":
-                return True
-    except OSError:
-        pass
-    return False
-
 
 def _safe_call_id(op: Any) -> int:
     try:
@@ -1070,8 +1057,8 @@ def _prim_is_disabled(prim: Any) -> bool:
 
 
 def _get_cluster_info() -> Dict[str, Any]:
-    # 1. Detect cluster mode
-    is_cluster = _is_corosync_running() or Path("/etc/corosync/corosync.conf").exists()
+    # 1. Detect cluster mode via corosync.conf (mounted read-only from host)
+    is_cluster = Path("/etc/corosync/corosync.conf").exists()
     if not is_cluster:
         return {"mode": "standalone", "online_nodes": [], "vms": []}
 
