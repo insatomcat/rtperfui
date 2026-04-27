@@ -1171,9 +1171,10 @@ def _get_cluster_info() -> Dict[str, Any]:
     }
 
 
-def _get_vm_xml(vm_name: str, pool: str = "system") -> Optional[str]:
-    # rbd is installed in the container; /etc/ceph is mounted from the host.
-    for spec in (f"{pool}/{vm_name}", vm_name):
+def _get_vm_xml(vm_name: str) -> Optional[str]:
+    # Seapath naming convention: image is "system_{vm_name}" in the default pool.
+    # Fallback to pool/image and bare name for flexibility.
+    for spec in (f"system_{vm_name}", f"system/{vm_name}", vm_name):
         result = _run_cmd(["rbd", "image-meta", "get", spec, "xml"], timeout=10)
         if "error" not in result and result.get("returncode", 1) == 0:
             txt = result.get("stdout", "").strip()
