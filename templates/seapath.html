@@ -120,17 +120,28 @@ function renderCluster(cluster, el) {
     }
 
     if (cluster.vms?.length) {
+        const stateStyle = {
+            started:  'bg-emerald-900/30 border-emerald-700/40 text-emerald-200',
+            stopped:  'bg-slate-800/60 border-slate-600/40 text-slate-400',
+            disabled: 'bg-amber-900/20 border-amber-700/30 text-amber-400',
+            unknown:  'bg-slate-800/40 border-slate-700/40 text-slate-500',
+        };
         h += `<div>
-            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">VirtualDomain (Started)</p>
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">VirtualDomain resources</p>
             <div class="flex flex-wrap gap-1.5">
-            ${cluster.vms.map(vm =>
-                `<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] bg-blue-900/30 border border-blue-700/40 text-blue-200">
+            ${cluster.vms.map(vm => {
+                const s = stateStyle[vm.state] || stateStyle.unknown;
+                const hostTxt = vm.host ? ` @ ${esc(vm.host)}` : '';
+                const debugTip = (vm._debug_node_summaries || [])
+                    .map(n => `${n.node}: ${n.last_op} rc=${n.rc} (${n.n_ops} ops)`)
+                    .join('\n') || 'no ops in CIB status';
+                return `<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] border ${s}" title="${esc(debugTip)}">
                     <span class="font-mono font-semibold">${esc(vm.name)}</span>
-                    <span class="text-blue-400">@ ${esc(vm.host)}</span>
-                </span>`
-            ).join('')}</div></div>`;
+                    <span class="opacity-70">${esc(vm.state)}${hostTxt}</span>
+                </span>`;
+            }).join('')}</div></div>`;
     } else if (isCluster) {
-        h += `<p class="text-xs text-slate-500">Aucune VM VirtualDomain démarrée trouvée.</p>`;
+        h += `<p class="text-xs text-slate-500">Aucune VM VirtualDomain trouvée dans le CIB.</p>`;
     }
 
     if (cluster.error)
@@ -443,11 +454,17 @@ function renderVmCards(vms, vmColorMap, el) {
             p.cpus.some(cpu => (vm.emulatorpin_cpus ?? []).includes(cpu) && false) // placeholder
         );
 
+        const stateBadge = { started: 'text-emerald-400', stopped: 'text-slate-500', disabled: 'text-amber-400', unknown: 'text-slate-600' };
+        const stateColor = stateBadge[vm.state] || stateBadge.unknown;
+        const debugTip = (vm._debug_node_summaries || [])
+            .map(n => `${n.node}: ${n.last_op} rc=${n.rc} (${n.n_ops} ops)`).join('\n') || '';
+
         return `<div class="rounded-xl border bg-slate-950/40 p-4" style="border-color:${c.fill}50">
             <div class="flex flex-wrap items-center gap-3 mb-3">
                 <div class="w-3.5 h-3.5 rounded-sm flex-shrink-0" style="background:${c.fill}"></div>
                 <span class="font-semibold text-slate-100 text-sm">${esc(vm.name)}</span>
-                <span class="text-[11px] text-slate-500">@ ${esc(vm.host ?? '?')}</span>
+                <span class="text-[11px] ${stateColor}" title="${esc(debugTip)}">${esc(vm.state ?? '?')}</span>
+                ${vm.host ? `<span class="text-[11px] text-slate-500">@ ${esc(vm.host)}</span>` : ''}
                 <span class="ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${esc(topoStr)}</span>
                 ${memGiB ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${memGiB} GiB</span>` : ''}
             </div>

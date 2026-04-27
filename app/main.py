@@ -998,40 +998,84 @@ def _is_corosync_running() -> bool:
     return False
 
 
-def _cib_resource_host(status_elt: Any, resource_id: str) -> Optional[str]:
-    """Return the node name where resource_id is currently running, from CIB status."""
+def _safe_call_id(op: Any) -> int:
+    try:
+        v = int(op.get("call-id", -1))
+        return v if v >= 0 else -1
+    except (ValueError, TypeError):
+        return -1
+
+
+def _cib_ops_for_resource(node_state_elt: Any, resource_id: str) -> List[Any]:
+    """Collect all operation elements for resource_id under a node_state, handling both
+    pacemaker 2.x (lrm/lrm_resources/lrm_resource/lrm_rsc_op) and
+    pacemaker 3.x (node_history/resource_history/op_history) structures."""
+    ops: List[Any] = []
+
+    # pacemaker 2.x
+    for lrm_rsc in node_state_elt.iter("lrm_resource"):
+        if lrm_rsc.get("id") == resource_id:
+            ops.extend(lrm_rsc.findall("lrm_rsc_op"))
+
+    # pacemaker 3.x
+    for rsc_hist in node_state_elt.iter("resource_history"):
+        if rsc_hist.get("id") == resource_id:
+            ops.extend(rsc_hist.findall("op_history"))
+            ops.extend(rsc_hist.findall("lrm_rsc_op"))
+
+    return ops
+
+
+def _cib_resource_status(status_elt: Any, resource_id: str) -> Dict[str, Any]:
+    """Return {"host": str|None, "node_states": [...]} for a resource across all nodes."""
     if status_elt is None:
-        return None
+        return {"host": None}
+
+    best_host: Optional[str] = None
+    node_summaries: List[Dict] = []
+
     for ns in status_elt.findall("node_state"):
         node_name = ns.get("uname") or ns.get("id", "?")
-        lrm = ns.find("lrm")
-        if lrm is None:
+        ops = _cib_ops_for_resource(ns, resource_id)
+        if not ops:
             continue
-        lrm_resources = lrm.find("lrm_resources")
-        if lrm_resources is None:
-            continue
-        for lrm_rsc in lrm_resources.findall("lrm_resource"):
-            if lrm_rsc.get("id") != resource_id:
-                continue
-            ops = sorted(lrm_rsc.findall("lrm_rsc_op"), key=lambda o: int(o.get("call-id", 0)))
-            if not ops:
-                continue
-            last = ops[-1]
-            op = last.get("operation", "")
-            rc = last.get("rc-code", "1")
-            if rc == "0" and op in ("start", "monitor"):
-                return node_name
-    return None
+
+        sorted_ops = sorted(ops, key=_safe_call_id)
+        last = sorted_ops[-1]
+        op = last.get("operation", "")
+        rc = last.get("rc-code", "?")
+        op_status = last.get("op-status", "0")
+
+        node_summaries.append({
+            "node": node_name,
+            "last_op": op,
+            "rc": rc,
+            "op_status": op_status,
+            "n_ops": len(ops),
+        })
+
+        if op_status == "0" and rc == "0" and op in ("start", "monitor"):
+            best_host = node_name
+
+    return {"host": best_host, "node_summaries": node_summaries}
+
+
+def _prim_is_disabled(prim: Any) -> bool:
+    """True if the primitive has target-role=Stopped in its meta_attributes."""
+    for meta in prim.iter("meta_attributes"):
+        for nvpair in meta.findall("nvpair"):
+            if nvpair.get("name") == "target-role" and nvpair.get("value", "").lower() == "stopped":
+                return True
+    return False
 
 
 def _get_cluster_info() -> Dict[str, Any]:
-    # 1. Detect cluster mode via corosync process or corosync.conf
+    # 1. Detect cluster mode
     is_cluster = _is_corosync_running() or Path("/etc/corosync/corosync.conf").exists()
-
     if not is_cluster:
         return {"mode": "standalone", "online_nodes": [], "vms": []}
 
-    # 2. Read the CIB XML (must be mounted read-only in the container)
+    # 2. Read CIB XML
     cib_xml: Optional[str] = None
     for p in CIB_PATHS:
         if p.exists():
@@ -1045,7 +1089,7 @@ def _get_cluster_info() -> Dict[str, Any]:
         return {
             "mode": "cluster",
             "error": (
-                "Cluster détecté (corosync actif) mais CIB inaccessible. "
+                "Cluster détecté mais CIB inaccessible. "
                 "Ajouter dans rtperfui.container : "
                 "Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro"
             ),
@@ -1059,43 +1103,65 @@ def _get_cluster_info() -> Dict[str, Any]:
     except ET.ParseError as exc:
         return {"mode": "cluster", "error": f"CIB XML parse error: {exc}", "online_nodes": [], "vms": []}
 
-    # Online nodes — node_state with crmd="online" and join="member"
     status_elt = root.find("status")
+
+    # Online nodes
     online_nodes: List[str] = []
     if status_elt is not None:
         for ns in status_elt.findall("node_state"):
-            if ns.get("crmd") == "online" and ns.get("join") == "member":
+            # Accept crmd=online OR in_ccm=true+join=member (pacemaker version variations)
+            crmd_ok = ns.get("crmd") == "online"
+            ccm_ok = ns.get("in_ccm") in ("true", "1") and ns.get("join") == "member"
+            if crmd_ok or ccm_ok:
                 name = ns.get("uname") or ns.get("id", "?")
-                online_nodes.append(name)
+                if name not in online_nodes:
+                    online_nodes.append(name)
 
-    # DC — map dc-uuid to a node uname via configuration/nodes
+    # DC
     dc: Optional[str] = None
     dc_uuid = root.get("dc-uuid")
     if dc_uuid:
         config = root.find("configuration")
-        nodes_elt = config.find("nodes") if config is not None else None
-        if nodes_elt is not None:
-            for node in nodes_elt.findall("node"):
+        nodes_cfg = config.find("nodes") if config is not None else None
+        if nodes_cfg is not None:
+            for node in nodes_cfg.findall("node"):
                 if node.get("id") == dc_uuid:
                     dc = node.get("uname") or dc_uuid
                     break
         if dc is None:
             dc = dc_uuid
 
-    # VirtualDomain resources — find started ones from CIB status
+    # All VirtualDomain primitives with their status
     vms: List[Dict] = []
     config = root.find("configuration")
     if config is not None:
-        resources = config.find("resources")
-        if resources is not None:
-            for prim in resources.iter("primitive"):
-                if (prim.get("class") == "ocf"
+        resources_elt = config.find("resources")
+        if resources_elt is not None:
+            for prim in resources_elt.iter("primitive"):
+                if not (prim.get("class") == "ocf"
                         and prim.get("provider") == "seapath"
                         and prim.get("type") == "VirtualDomain"):
-                    vm_id = prim.get("id", "?")
-                    host = _cib_resource_host(status_elt, vm_id)
-                    if host:
-                        vms.append({"name": vm_id, "host": host})
+                    continue
+                vm_id = prim.get("id", "?")
+                disabled = _prim_is_disabled(prim)
+                rsc_status = _cib_resource_status(status_elt, vm_id)
+                host = rsc_status.get("host")
+
+                if disabled:
+                    vm_state = "disabled"
+                elif host:
+                    vm_state = "started"
+                elif rsc_status.get("node_summaries"):
+                    vm_state = "stopped"
+                else:
+                    vm_state = "unknown"
+
+                vms.append({
+                    "name": vm_id,
+                    "host": host,
+                    "state": vm_state,
+                    "_debug_node_summaries": rsc_status.get("node_summaries", []),
+                })
 
     return {
         "mode": "cluster",
@@ -1313,13 +1379,20 @@ def run_seapath_checks() -> Dict[str, Any]:
     vms_detailed: List[Dict] = []
     for vm in cluster.get("vms", []):
         xml_str = _get_vm_xml(vm["name"])
+        base = {
+            "state": vm.get("state", "unknown"),
+            "_debug_node_summaries": vm.get("_debug_node_summaries", []),
+        }
         if xml_str:
-            parsed = _parse_vm_libvirt_xml(vm["name"], xml_str, vm["host"])
+            parsed = _parse_vm_libvirt_xml(vm["name"], xml_str, vm.get("host"))
+            parsed.update(base)
         else:
             parsed = {
-                "name": vm["name"], "host": vm["host"],
+                "name": vm["name"],
+                "host": vm.get("host"),
                 "error": "XML non disponible (rbd image-meta get a échoué)",
                 "all_vcpu_cpus": [], "emulatorpin_cpus": [],
+                **base,
             }
         vms_detailed.append(parsed)
 
@@ -1328,6 +1401,9 @@ def run_seapath_checks() -> Dict[str, Any]:
 
     cpu_assignment: Dict[int, Dict] = {cpu: {"vms_vcpu": [], "vms_emulator": []} for cpu in all_cpus}
     for vm in vms_detailed:
+        # Only include started VMs in the CPU map
+        if vm.get("state") != "started":
+            continue
         name = vm["name"]
         for cpu in vm.get("all_vcpu_cpus", []):
             if cpu in cpu_assignment:
