@@ -6,7 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         rt-tests \
-        ca-certificates && \
+        ca-certificates \
+        ceph-common && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

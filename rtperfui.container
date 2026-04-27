@@ -26,6 +26,9 @@ Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro
 # Corosync config — used to detect cluster mode
 Volume=/etc/corosync/corosync.conf:/etc/corosync/corosync.conf:ro
 
+# Ceph config + keyring — needed for rbd image-meta get (VM XML retrieval)
+Volume=/etc/ceph:/etc/ceph:ro
+
 Environment=PYTHONUNBUFFERED=1
 [Service]
 Restart=always

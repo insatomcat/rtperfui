@@ -1172,8 +1172,9 @@ def _get_cluster_info() -> Dict[str, Any]:
 
 
 def _get_vm_xml(vm_name: str, pool: str = "system") -> Optional[str]:
+    # rbd is installed in the container; /etc/ceph is mounted from the host.
     for spec in (f"{pool}/{vm_name}", vm_name):
-        result = _run_host_cmd(["rbd", "image-meta", "get", spec, "xml"])
+        result = _run_cmd(["rbd", "image-meta", "get", spec, "xml"], timeout=10)
         if "error" not in result and result.get("returncode", 1) == 0:
             txt = result.get("stdout", "").strip()
             if txt:
