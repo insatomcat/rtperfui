@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 import subprocess
 import shlex
 import re
+import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -78,6 +79,21 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "systemcheck_done": "Checks terminés",
         "systemcheck_report": "Rapport",
         "systemcheck_error": "Erreur lors des vérifications système.",
+        "tab_seapath": "seapath",
+        "seapath_title": "Configuration Seapath",
+        "seapath_intro": (
+            "Vérifie la configuration Seapath de la machine hôte : mode cluster/standalone, "
+            "configuration RT (tuned, cmdline, sysctl), hugepages et affectation CPU des VM."
+        ),
+        "seapath_run": "Analyser",
+        "seapath_running": "Analyse en cours…",
+        "seapath_done": "Analyse terminée",
+        "seapath_error": "Erreur lors de l'analyse Seapath",
+        "seapath_cluster_status": "Statut cluster",
+        "seapath_rt_config": "Configuration RT",
+        "seapath_hugepages": "Hugepages",
+        "seapath_cpu_map": "Carte d'affectation CPU",
+        "seapath_vm_details": "Détails des VM",
         "status_ok": "OK",
         "status_warn": "ATTENTION",
         "status_fail": "ÉCHEC",
@@ -145,6 +161,21 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "systemcheck_done": "Checks completed",
         "systemcheck_report": "Report",
         "systemcheck_error": "Error while running system checks.",
+        "tab_seapath": "seapath",
+        "seapath_title": "Seapath Configuration",
+        "seapath_intro": (
+            "Checks the Seapath configuration of the host machine: cluster/standalone mode, "
+            "RT configuration (tuned, cmdline, sysctl), hugepages and VM CPU assignment."
+        ),
+        "seapath_run": "Analyze",
+        "seapath_running": "Analyzing…",
+        "seapath_done": "Analysis complete",
+        "seapath_error": "Error during Seapath analysis",
+        "seapath_cluster_status": "Cluster status",
+        "seapath_rt_config": "RT Configuration",
+        "seapath_hugepages": "Hugepages",
+        "seapath_cpu_map": "CPU Assignment Map",
+        "seapath_vm_details": "VM Details",
         "status_ok": "OK",
         "status_warn": "WARNING",
         "status_fail": "FAIL",
@@ -598,14 +629,14 @@ def parse_hwlatdetect_output(raw: str) -> dict:
     }
 
 
-def _run_cmd(cmd: List[str]) -> Dict[str, Any]:
+def _run_cmd(cmd: List[str], timeout: int = 3) -> Dict[str, Any]:
     try:
         completed = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             check=False,
-            timeout=3,
+            timeout=timeout,
         )
         return {
             "returncode": completed.returncode,
@@ -613,6 +644,23 @@ def _run_cmd(cmd: List[str]) -> Dict[str, Any]:
             "stderr": completed.stderr.strip(),
         }
     except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)}
+
+
+def _run_host_cmd(cmd: List[str], timeout: int = 15) -> Dict[str, Any]:
+    """Run a command directly; if not found, retry via nsenter into PID-1 namespaces."""
+    try:
+        completed = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=timeout)
+        return {"returncode": completed.returncode, "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        return {"error": str(exc)}
+    nsenter = ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--"] + cmd
+    try:
+        completed = subprocess.run(nsenter, capture_output=True, text=True, check=False, timeout=timeout)
+        return {"returncode": completed.returncode, "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
+    except Exception as exc:
         return {"error": str(exc)}
 
 
@@ -884,6 +932,354 @@ def run_system_checks() -> List[Dict[str, Any]]:
     return checks
 
 
+# ---------------------------------------------------------------------------
+# Seapath helpers
+# ---------------------------------------------------------------------------
+
+def _parse_cpuset(s: str) -> List[int]:
+    cpus: List[int] = []
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            try:
+                cpus.extend(range(int(a.strip()), int(b.strip()) + 1))
+            except ValueError:
+                pass
+        elif part.isdigit():
+            cpus.append(int(part))
+    return sorted(set(cpus))
+
+
+def _get_all_cpus() -> List[int]:
+    online_path = Path("/sys/devices/system/cpu/online")
+    cpus: List[int] = []
+    if online_path.exists():
+        content = online_path.read_text().strip()
+        for part in content.split(","):
+            part = part.strip()
+            if "-" in part:
+                a, b = part.split("-", 1)
+                try:
+                    cpus.extend(range(int(a), int(b) + 1))
+                except ValueError:
+                    pass
+            elif part.isdigit():
+                cpus.append(int(part))
+    if not cpus:
+        try:
+            content = Path("/proc/cpuinfo").read_text()
+            for m in re.finditer(r"^processor\s*:\s*(\d+)", content, re.MULTILINE):
+                cpus.append(int(m.group(1)))
+        except OSError:
+            pass
+    return sorted(set(cpus))
+
+
+def _get_cluster_info() -> Dict[str, Any]:
+    result = _run_host_cmd(["crm", "status"])
+    if "error" in result or result.get("returncode", 1) != 0:
+        return {
+            "mode": "standalone",
+            "error": result.get("error") or result.get("stderr", "crm non disponible"),
+            "online_nodes": [],
+            "vms": [],
+        }
+
+    output = result.get("stdout", "")
+    dc_m = re.search(r"Current DC:\s+(\S+)", output)
+    dc = dc_m.group(1) if dc_m else None
+
+    nodes_m = re.search(r"Online:\s*\[\s*([^\]]+)\]", output)
+    online_nodes = nodes_m.group(1).split() if nodes_m else []
+
+    vms = []
+    for m in re.finditer(
+        r"\*\s+(\S+)\s+\(ocf:seapath:VirtualDomain\):\s+Started\s+(\S+)", output
+    ):
+        vms.append({"name": m.group(1), "host": m.group(2)})
+
+    return {
+        "mode": "cluster" if (online_nodes or dc) else "standalone",
+        "dc": dc,
+        "online_nodes": online_nodes,
+        "vms": vms,
+    }
+
+
+def _get_vm_xml(vm_name: str, pool: str = "system") -> Optional[str]:
+    for spec in (f"{pool}/{vm_name}", vm_name):
+        result = _run_host_cmd(["rbd", "image-meta", "get", spec, "xml"])
+        if "error" not in result and result.get("returncode", 1) == 0:
+            txt = result.get("stdout", "").strip()
+            if txt:
+                return txt
+    return None
+
+
+def _parse_vm_libvirt_xml(vm_name: str, xml_str: str, host: str) -> Dict[str, Any]:
+    try:
+        root = ET.fromstring(xml_str)
+    except ET.ParseError as exc:
+        return {"name": vm_name, "host": host, "error": f"XML parse error: {exc}", "all_vcpu_cpus": [], "emulatorpin_cpus": []}
+
+    vcpu_elt = root.find("vcpu")
+    vcpu_count = int(vcpu_elt.text) if vcpu_elt is not None and vcpu_elt.text else 0
+
+    topology: Dict[str, int] = {}
+    cpu_elt = root.find("cpu")
+    if cpu_elt is not None:
+        topo = cpu_elt.find("topology")
+        if topo is not None:
+            topology = {
+                "sockets": int(topo.get("sockets", 1)),
+                "dies": int(topo.get("dies", 1)),
+                "cores": int(topo.get("cores", 1)),
+                "threads": int(topo.get("threads", 1)),
+            }
+
+    cputune = root.find("cputune")
+    vcpupins: List[Dict] = []
+    emulatorpin_cpus: List[int] = []
+    vcpuscheds: List[Dict] = []
+    emulatorsched: Optional[Dict] = None
+
+    if cputune is not None:
+        for pin in cputune.findall("vcpupin"):
+            cpuset_str = pin.get("cpuset", "")
+            vcpupins.append({
+                "vcpu": int(pin.get("vcpu", 0)),
+                "cpus": _parse_cpuset(cpuset_str),
+                "cpuset_str": cpuset_str,
+            })
+        empin = cputune.find("emulatorpin")
+        if empin is not None:
+            emulatorpin_cpus = _parse_cpuset(empin.get("cpuset", ""))
+        for sched in cputune.findall("vcpusched"):
+            vcpuscheds.append({
+                "vcpus": sched.get("vcpus", ""),
+                "scheduler": sched.get("scheduler", ""),
+                "priority": int(sched.get("priority", 0)),
+            })
+        emsched = cputune.find("emulatorsched")
+        if emsched is not None:
+            emulatorsched = {
+                "scheduler": emsched.get("scheduler", ""),
+                "priority": int(emsched.get("priority", 0)),
+            }
+
+    all_vcpu_cpus = sorted(set(c for pin in vcpupins for c in pin["cpus"]))
+
+    numatune: Dict[str, str] = {}
+    nt = root.find("numatune")
+    if nt is not None:
+        mem = nt.find("memory")
+        if mem is not None:
+            numatune = {"mode": mem.get("mode", ""), "nodeset": mem.get("nodeset", "")}
+
+    mem_elt = root.find("memory")
+    memory_kb = int(mem_elt.text) if mem_elt is not None and mem_elt.text else 0
+
+    return {
+        "name": vm_name,
+        "host": host,
+        "vcpu_count": vcpu_count,
+        "topology": topology,
+        "vcpupins": vcpupins,
+        "emulatorpin_cpus": emulatorpin_cpus,
+        "all_vcpu_cpus": all_vcpu_cpus,
+        "vcpuscheds": vcpuscheds,
+        "emulatorsched": emulatorsched,
+        "numatune": numatune,
+        "memory_kb": memory_kb,
+    }
+
+
+def _get_hugepages_info() -> Dict[str, Any]:
+    info: Dict[str, Any] = {}
+
+    meminfo = Path("/proc/meminfo")
+    if meminfo.exists():
+        content = meminfo.read_text()
+        for key in ("HugePages_Total", "HugePages_Free", "HugePages_Rsvd", "HugePages_Surp", "Hugepagesize"):
+            m = re.search(rf"^{key}:\s+(\d+)", content, re.MULTILINE)
+            if m:
+                info[key.lower()] = int(m.group(1))
+
+    gb_path = Path("/sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages")
+    if gb_path.exists():
+        try:
+            info["nr_1g_hugepages"] = int(gb_path.read_text().strip())
+        except ValueError:
+            pass
+
+    numa_nodes: List[Dict] = []
+    node_dir = Path("/sys/devices/system/node")
+    if node_dir.exists():
+        for node_path in sorted(node_dir.glob("node*")):
+            if not (node_path.is_dir() and re.match(r"node\d+$", node_path.name)):
+                continue
+            node_id = node_path.name.replace("node", "")
+            hp_dir = node_path / "hugepages" / "hugepages-2048kB"
+            if hp_dir.exists():
+                ni: Dict[str, Any] = {"node": node_id}
+                for fname in ("nr_hugepages", "free_hugepages", "surplus_hugepages"):
+                    p = hp_dir / fname
+                    if p.exists():
+                        try:
+                            ni[fname] = int(p.read_text().strip())
+                        except ValueError:
+                            pass
+                numa_nodes.append(ni)
+    if numa_nodes:
+        info["numa_nodes"] = numa_nodes
+
+    thp = Path("/sys/kernel/mm/transparent_hugepage/enabled")
+    if thp.exists():
+        info["thp_enabled"] = thp.read_text().strip()
+
+    return info
+
+
+def _get_rt_config_seapath() -> Dict[str, Any]:
+    cfg: Dict[str, Any] = {}
+
+    tuned_profile: Optional[str] = None
+    for p in (Path("/run/tuned/active_profile"), Path("/etc/tuned/active_profile")):
+        if p.exists():
+            try:
+                tuned_profile = p.read_text().strip()
+                break
+            except OSError:
+                pass
+    if tuned_profile is None:
+        r = _run_cmd(["tuned-adm", "active"], timeout=5)
+        if "error" not in r and r.get("returncode", 1) == 0:
+            m = re.search(r"Current active profile:\s+(\S+)", r.get("stdout", ""))
+            if m:
+                tuned_profile = m.group(1)
+    cfg["tuned_profile"] = tuned_profile
+
+    if tuned_profile:
+        for base in (Path("/etc/tuned"), Path("/usr/lib/tuned")):
+            profile_dir = base / tuned_profile
+            if not profile_dir.exists():
+                continue
+            tuned_conf = profile_dir / "tuned.conf"
+            if tuned_conf.exists():
+                try:
+                    cfg["tuned_conf"] = tuned_conf.read_text()
+                except OSError:
+                    pass
+            scripts = []
+            for sh in sorted(profile_dir.glob("*.sh")):
+                try:
+                    scripts.append({"name": sh.name, "content": sh.read_text()})
+                except OSError:
+                    pass
+            if scripts:
+                cfg["tuned_scripts"] = scripts
+            break
+
+    cfg["isolated_cpus"] = detect_isolated_cpus()
+
+    cmdline_path = Path("/proc/cmdline")
+    if cmdline_path.exists():
+        cfg["cmdline"] = cmdline_path.read_text().strip()
+
+    sysctl: Dict[str, str] = {}
+    for path_suffix, key in (
+        ("kernel/sched_rt_runtime_us", "kernel.sched_rt_runtime_us"),
+        ("kernel/sched_rt_period_us", "kernel.sched_rt_period_us"),
+        ("kernel/numa_balancing", "kernel.numa_balancing"),
+        ("kernel/nmi_watchdog", "kernel.nmi_watchdog"),
+        ("kernel/watchdog", "kernel.watchdog"),
+        ("vm/swappiness", "vm.swappiness"),
+        ("vm/stat_interval", "vm.stat_interval"),
+        ("kernel/sched_min_granularity_ns", "kernel.sched_min_granularity_ns"),
+        ("kernel/sched_wakeup_granularity_ns", "kernel.sched_wakeup_granularity_ns"),
+    ):
+        p = Path(f"/proc/sys/{path_suffix}")
+        if p.exists():
+            try:
+                sysctl[key] = p.read_text().strip()
+            except OSError:
+                pass
+    cfg["sysctl"] = sysctl
+    return cfg
+
+
+def run_seapath_checks() -> Dict[str, Any]:
+    cluster = _get_cluster_info()
+
+    vms_detailed: List[Dict] = []
+    for vm in cluster.get("vms", []):
+        xml_str = _get_vm_xml(vm["name"])
+        if xml_str:
+            parsed = _parse_vm_libvirt_xml(vm["name"], xml_str, vm["host"])
+        else:
+            parsed = {
+                "name": vm["name"], "host": vm["host"],
+                "error": "XML non disponible (rbd image-meta get a échoué)",
+                "all_vcpu_cpus": [], "emulatorpin_cpus": [],
+            }
+        vms_detailed.append(parsed)
+
+    all_cpus = _get_all_cpus()
+    isolated_cpus = detect_isolated_cpus()
+
+    cpu_assignment: Dict[int, Dict] = {cpu: {"vms_vcpu": [], "vms_emulator": []} for cpu in all_cpus}
+    for vm in vms_detailed:
+        name = vm["name"]
+        for cpu in vm.get("all_vcpu_cpus", []):
+            if cpu in cpu_assignment:
+                cpu_assignment[cpu]["vms_vcpu"].append(name)
+        for cpu in vm.get("emulatorpin_cpus", []):
+            if cpu in cpu_assignment:
+                cpu_assignment[cpu]["vms_emulator"].append(name)
+
+    cpu_map: List[Dict] = []
+    for cpu in all_cpus:
+        entry = cpu_assignment[cpu]
+        vms_v = entry["vms_vcpu"]
+        vms_e = entry["vms_emulator"]
+        all_vms = sorted(set(vms_v + vms_e))
+        is_isolated = cpu in isolated_cpus
+        conflict = len(set(vms_v)) > 1
+        overlap = bool(vms_v and vms_e and not set(vms_v).issuperset(set(vms_e)))
+
+        if conflict:
+            status = "conflict"
+        elif overlap:
+            status = "overlap"
+        elif vms_v:
+            status = "vcpu"
+        elif vms_e:
+            status = "emulator"
+        elif is_isolated:
+            status = "isolated_free"
+        else:
+            status = "free"
+
+        cpu_map.append({
+            "cpu": cpu, "status": status,
+            "vms_vcpu": vms_v, "vms_emulator": vms_e,
+            "all_vms": all_vms, "is_isolated": is_isolated,
+        })
+
+    return {
+        "cluster": cluster,
+        "vms": vms_detailed,
+        "rt_config": _get_rt_config_seapath(),
+        "hugepages": _get_hugepages_info(),
+        "cpu_map": cpu_map,
+        "all_cpus": all_cpus,
+        "isolated_cpus": isolated_cpus,
+    }
+
+
 @app.post("/api/cyclictest/run")
 async def run_cyclictest(
     duration_s: int = Form(60),
@@ -1037,6 +1433,21 @@ async def systemcheck_page(request: Request) -> HTMLResponse:
 async def systemcheck_run():
     checks = run_system_checks()
     return JSONResponse({"checks": checks})
+
+
+@app.get("/seapath", response_class=HTMLResponse)
+async def seapath_page(request: Request) -> HTMLResponse:
+    lang = get_lang_from_request(request)
+    return templates.TemplateResponse(
+        "seapath.html",
+        {"request": request, "lang": lang, "active_tab": "seapath"},
+    )
+
+
+@app.get("/api/seapath/run")
+async def seapath_run():
+    data = run_seapath_checks()
+    return JSONResponse(data)
 
 
 if __name__ == "__main__":

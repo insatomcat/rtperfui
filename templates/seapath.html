@@ -1,0 +1,531 @@
+{% extends "base.html" %}
+
+{% block title %}seapath{% endblock %}
+
+{% block head_extra %}
+<style>
+.cpu-cell { transition: transform 0.1s ease, box-shadow 0.1s ease; cursor: default; }
+.cpu-cell:hover { transform: scale(1.18); box-shadow: 0 0 12px rgba(0,0,0,0.6); z-index: 10; position: relative; }
+.numa-group + .numa-group { margin-left: 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Trigger card -->
+<section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-6 shadow-xl shadow-black/40">
+    <h2 class="text-lg font-medium mb-2 flex items-center gap-2">
+        <span class="inline-flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        {{ t(lang, "seapath_title") }}
+    </h2>
+    <p class="text-xs text-slate-400 mb-4">{{ t(lang, "seapath_intro") }}</p>
+    <div class="flex items-center justify-between gap-4">
+        <p id="status" class="text-xs text-slate-400"></p>
+        <button id="run-btn"
+                class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 shadow-md shadow-emerald-500/30 hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:cursor-not-allowed">
+            {{ t(lang, "seapath_run") }}
+        </button>
+    </div>
+</section>
+
+<!-- Results (initially hidden) -->
+<div id="results" class="hidden space-y-4">
+
+    <!-- Cluster status -->
+    <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-5 shadow-xl shadow-black/40">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{{ t(lang, "seapath_cluster_status") }}</h2>
+        <div id="cluster-content"></div>
+    </section>
+
+    <!-- RT config + Hugepages side by side -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-5 shadow-xl shadow-black/40">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{{ t(lang, "seapath_rt_config") }}</h2>
+            <div id="rt-content" class="text-xs"></div>
+        </section>
+        <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-5 shadow-xl shadow-black/40">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{{ t(lang, "seapath_hugepages") }}</h2>
+            <div id="hp-content" class="text-xs"></div>
+        </section>
+    </div>
+
+    <!-- CPU Map -->
+    <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-5 shadow-xl shadow-black/40">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{{ t(lang, "seapath_cpu_map") }}</h2>
+        <div id="cpu-legend" class="flex flex-wrap gap-x-4 gap-y-1.5 mb-4"></div>
+        <div id="cpu-grid" class="flex flex-wrap gap-1.5"></div>
+        <div id="cpu-stats" class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500"></div>
+    </section>
+
+    <!-- VM Details -->
+    <section class="bg-slate-900/60 border border-slate-700/80 rounded-2xl p-5 shadow-xl shadow-black/40">
+        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{{ t(lang, "seapath_vm_details") }}</h2>
+        <div id="vm-cards" class="space-y-3"></div>
+    </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const lang = "{{ lang }}";
+const runBtn = document.getElementById("run-btn");
+const statusEl = document.getElementById("status");
+const results = document.getElementById("results");
+
+// VM color palette — full + dark variant for emulator cells
+const VM_PALETTE = [
+    { fill: '#1d4ed8', dark: '#172554', text: '#bfdbfe' },
+    { fill: '#6d28d9', dark: '#2e1065', text: '#ddd6fe' },
+    { fill: '#047857', dark: '#052e16', text: '#bbf7d0' },
+    { fill: '#b45309', dark: '#451a03', text: '#fde68a' },
+    { fill: '#0e7490', dark: '#083344', text: '#a5f3fc' },
+    { fill: '#9d174d', dark: '#500724', text: '#fbcfe8' },
+    { fill: '#3f6212', dark: '#1a2e05', text: '#d9f99d' },
+    { fill: '#9a3412', dark: '#431407', text: '#fed7aa' },
+];
+
+function buildVmColorMap(vms) {
+    const map = {};
+    vms.forEach((vm, i) => { map[vm.name] = VM_PALETTE[i % VM_PALETTE.length]; });
+    return map;
+}
+
+function esc(s) {
+    return String(s ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Cluster section ──────────────────────────────────────────────────────────
+function renderCluster(cluster, el) {
+    const isCluster = cluster.mode === 'cluster';
+    let h = `<div class="flex flex-wrap items-center gap-3 mb-3">
+        <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold border
+            ${isCluster
+                ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40'
+                : 'bg-amber-500/10 text-amber-300 border-amber-500/40'}">
+            ${isCluster ? 'Cluster Seapath' : 'Standalone'}
+        </span>`;
+    if (cluster.dc)
+        h += `<span class="text-xs text-slate-400">DC: <span class="text-slate-200">${esc(cluster.dc)}</span></span>`;
+    h += '</div>';
+
+    if (cluster.online_nodes?.length) {
+        h += `<div class="mb-3">
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Nœuds actifs</p>
+            <div class="flex flex-wrap gap-1.5">
+            ${cluster.online_nodes.map(n =>
+                `<span class="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-mono bg-slate-800 border border-slate-700 text-slate-200">${esc(n)}</span>`
+            ).join('')}</div></div>`;
+    }
+
+    if (cluster.vms?.length) {
+        h += `<div>
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">VirtualDomain (Started)</p>
+            <div class="flex flex-wrap gap-1.5">
+            ${cluster.vms.map(vm =>
+                `<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] bg-blue-900/30 border border-blue-700/40 text-blue-200">
+                    <span class="font-mono font-semibold">${esc(vm.name)}</span>
+                    <span class="text-blue-400">@ ${esc(vm.host)}</span>
+                </span>`
+            ).join('')}</div></div>`;
+    } else if (isCluster) {
+        h += `<p class="text-xs text-slate-500">Aucune VM VirtualDomain démarrée trouvée.</p>`;
+    }
+
+    if (cluster.error)
+        h += `<p class="mt-2 text-xs text-rose-400">⚠ ${esc(cluster.error)}</p>`;
+
+    el.innerHTML = h;
+}
+
+// ── RT config section ────────────────────────────────────────────────────────
+const RT_PARAMS = ['isolcpus','nohz_full','rcu_nocbs','intel_pstate','processor.max_cstate',
+    'idle=poll','hugepagesz','hugepages=','iommu','nosoftlockup','skew_tick',
+    'intel_idle','mce=off','irqaffinity','tsc=','nopti'];
+
+function renderRT(rt, el) {
+    let h = '';
+
+    // Tuned profile
+    const profile = rt.tuned_profile || '—';
+    const isRT = /realtime|seapath/i.test(profile);
+    h += `<div class="mb-3">
+        <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Profil tuned</p>
+        <div class="flex items-center flex-wrap gap-2">
+            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border
+                ${isRT ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40' : 'bg-amber-500/10 text-amber-300 border-amber-500/40'}">
+                ${esc(profile)}
+            </span>
+            ${rt.tuned_scripts?.length
+                ? `<span class="text-[11px] text-slate-400">+ ${rt.tuned_scripts.length} script(s): ${rt.tuned_scripts.map(s => esc(s.name)).join(', ')}</span>`
+                : ''}
+        </div>`;
+
+    // Show tuned.conf sysctl / cpu / script sections briefly
+    if (rt.tuned_conf) {
+        const sections = [];
+        const sectRe = /^\[([^\]]+)\]([\s\S]*?)(?=^\[|$)/gm;
+        let sm;
+        while ((sm = sectRe.exec(rt.tuned_conf)) !== null) {
+            const name = sm[1].trim();
+            const body = sm[2].trim();
+            if (body && ['cpu','sysctl','script'].includes(name.toLowerCase()))
+                sections.push({ name, body });
+        }
+        if (sections.length) {
+            h += `<details class="mt-2"><summary class="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">tuned.conf — sections clés ▾</summary>
+                <div class="mt-1 space-y-2">`;
+            sections.forEach(s => {
+                h += `<div><p class="text-[10px] text-slate-500 mb-0.5">[${esc(s.name)}]</p>
+                    <pre class="text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-snug">${esc(s.body)}</pre></div>`;
+            });
+            h += '</div></details>';
+        }
+    }
+    h += '</div>';
+
+    // Isolated CPUs
+    if (rt.isolated_cpus?.length) {
+        h += `<div class="mb-3">
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">CPUs isolés</p>
+            <p class="text-xs text-slate-200 font-mono">${rt.isolated_cpus.join(', ')}</p>
+            <p class="text-[11px] text-slate-500">${rt.isolated_cpus.length} CPUs</p>
+        </div>`;
+    }
+
+    // cmdline — highlight RT params
+    if (rt.cmdline) {
+        const highlighted = rt.cmdline.split(' ').map(p => {
+            const isRTparam = RT_PARAMS.some(rp => p.startsWith(rp));
+            return isRTparam
+                ? `<span class="text-emerald-300">${esc(p)}</span>`
+                : `<span class="text-slate-500">${esc(p)}</span>`;
+        }).join(' ');
+        h += `<div class="mb-3">
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Cmdline</p>
+            <p class="text-[11px] font-mono leading-relaxed break-all">${highlighted}</p>
+        </div>`;
+    }
+
+    // sysctl
+    if (rt.sysctl && Object.keys(rt.sysctl).length) {
+        h += `<div>
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Sysctl RT</p>
+            <div class="space-y-px">`;
+        for (const [k, v] of Object.entries(rt.sysctl)) {
+            const good = (k.includes('sched_rt_runtime') && v === '-1') ||
+                         (k.includes('nmi_watchdog') && v === '0') ||
+                         (k.includes('numa_balancing') && v === '0');
+            h += `<div class="flex items-center justify-between gap-2 py-0.5">
+                <span class="text-[11px] text-slate-400 font-mono">${esc(k)}</span>
+                <span class="text-[11px] font-mono ${good ? 'text-emerald-300' : 'text-slate-200'}">${esc(v)}</span>
+            </div>`;
+        }
+        h += '</div></div>';
+    }
+
+    el.innerHTML = h;
+}
+
+// ── Hugepages section ────────────────────────────────────────────────────────
+function renderHugepages(hp, el) {
+    let h = '';
+
+    const total = hp.hugepages_total;
+    const free  = hp.hugepages_free ?? 0;
+    const sizeKB = hp.hugepagesize ?? 2048;
+    const sizeMB = sizeKB / 1024;
+
+    if (total !== undefined) {
+        const used = total - free;
+        const pct = total > 0 ? Math.round(used / total * 100) : 0;
+        const barColor = pct > 90 ? '#ef4444' : pct > 70 ? '#f59e0b' : '#10b981';
+        h += `<div class="mb-4">
+            <div class="flex items-baseline justify-between mb-1">
+                <p class="text-[11px] text-slate-500 uppercase tracking-wide">Hugepages ${sizeMB}M</p>
+                <p class="text-xs text-slate-300">${used} / ${total} utilisées (${pct}%)</p>
+            </div>
+            <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div class="h-full rounded-full" style="width:${pct}%;background:${barColor}"></div>
+            </div>
+            <div class="flex flex-wrap gap-x-4 mt-1 text-[11px] text-slate-500">
+                <span>Total: ${total} × ${sizeMB}M = ${(total * sizeKB / 1024 / 1024).toFixed(1)} GiB</span>
+                <span>Libres: ${free}</span>
+                ${hp.hugepages_rsvd != null ? `<span>Réservées: ${hp.hugepages_rsvd}</span>` : ''}
+            </div>
+        </div>`;
+    }
+
+    if (hp.nr_1g_hugepages != null) {
+        h += `<div class="mb-3">
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Hugepages 1G</p>
+            <p class="text-xs text-slate-200">${hp.nr_1g_hugepages} pages (${hp.nr_1g_hugepages} GiB)</p>
+        </div>`;
+    }
+
+    if (hp.numa_nodes?.length) {
+        h += `<div class="mb-3">
+            <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1">Par nœud NUMA (2M)</p>
+            <div class="space-y-1">`;
+        hp.numa_nodes.forEach(n => {
+            const nr = n.nr_hugepages ?? 0;
+            const fr = n.free_hugepages ?? 0;
+            const pct = nr > 0 ? Math.round((nr - fr) / nr * 100) : 0;
+            h += `<div class="flex items-center gap-3">
+                <span class="text-[11px] text-slate-400 font-mono w-14">Node ${esc(n.node)}</span>
+                <span class="text-[11px] text-slate-200">${nr} total</span>
+                <span class="text-[11px] text-slate-500">${fr} libres</span>
+                <div class="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div class="h-full rounded-full bg-blue-600" style="width:${pct}%"></div>
+                </div>
+            </div>`;
+        });
+        h += '</div></div>';
+    }
+
+    if (hp.thp_enabled) {
+        const never = hp.thp_enabled.includes('[never]');
+        h += `<div class="mt-3 pt-3 border-t border-slate-800">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] text-slate-500">Transparent Hugepages (THP)</span>
+                <span class="text-[11px] font-mono ${never ? 'text-emerald-300' : 'text-amber-300'}">${esc(hp.thp_enabled)}</span>
+            </div>
+            ${!never ? '<p class="text-[11px] text-amber-400 mt-1">⚠ THP devrait être [never] pour les workloads RT/hugepages statiques</p>' : ''}
+        </div>`;
+    }
+
+    if (!h) h = '<p class="text-xs text-slate-500">Informations hugepages non disponibles.</p>';
+    el.innerHTML = h;
+}
+
+// ── CPU Map ──────────────────────────────────────────────────────────────────
+function renderCpuMap(cpuMap, vms, vmColorMap, gridEl, legendEl, statsEl) {
+    // Legend
+    let legH = `
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded" style="background:#1e293b;border:1px solid #334155"></div>
+            <span class="text-[11px] text-slate-400">Libre</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded" style="background:#451a03;border:1px solid #d97706"></div>
+            <span class="text-[11px] text-slate-400">Isolé libre</span>
+        </div>`;
+    vms.forEach(vm => {
+        const c = vmColorMap[vm.name];
+        if (!c) return;
+        legH += `
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded" style="background:${c.fill}"></div>
+            <span class="text-[11px] text-slate-400">${esc(vm.name)} vCPU</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded border-dashed border-2" style="background:${c.dark};border-color:${c.fill}"></div>
+            <span class="text-[11px] text-slate-400">${esc(vm.name)} emu</span>
+        </div>`;
+    });
+    legH += `
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded" style="background:#450a0a;border:1px solid #dc2626"></div>
+            <span class="text-[11px] text-rose-400">Conflit / overlap</span>
+        </div>`;
+    legendEl.innerHTML = legH;
+
+    // Grid cells
+    let gridH = '';
+    let cntFree = 0, cntIsolFree = 0, cntVcpu = 0, cntEmu = 0, cntConflict = 0;
+
+    cpuMap.forEach(entry => {
+        const { cpu, status, vms_vcpu, vms_emulator, all_vms, is_isolated } = entry;
+
+        let bg = '#1e293b', border = '#334155', textColor = '#64748b';
+        let borderStyle = 'solid', borderW = '1px';
+        let badge = '';
+
+        if (status === 'conflict' || status === 'overlap') {
+            bg = '#450a0a'; border = '#dc2626'; textColor = '#fca5a5';
+            badge = '!';
+            cntConflict++;
+        } else if (status === 'vcpu') {
+            const c = vmColorMap[vms_vcpu[0]] ?? { fill: '#6b7280', text: '#f3f4f6' };
+            bg = c.fill; border = c.fill; textColor = c.text;
+            // emulator badge if this CPU is also in an emulatorpin (same or other VM)
+            if (vms_emulator.length) badge = 'E';
+            cntVcpu++;
+        } else if (status === 'emulator') {
+            const c = vmColorMap[vms_emulator[0]] ?? { dark: '#374151', fill: '#6b7280', text: '#9ca3af' };
+            bg = c.dark; border = c.fill; textColor = c.text;
+            borderStyle = 'dashed'; borderW = '2px';
+            badge = 'E';
+            cntEmu++;
+        } else if (status === 'isolated_free') {
+            bg = '#451a03'; border = '#d97706'; textColor = '#fbbf24';
+            cntIsolFree++;
+        } else {
+            cntFree++;
+        }
+
+        // Tooltip text
+        let tip = `CPU ${cpu}`;
+        if (status === 'conflict' || status === 'overlap') tip += `\n⚠ CONFLIT: ${all_vms.join(', ')}`;
+        else if (vms_vcpu.length) tip += `\nvCPU → ${vms_vcpu.join(', ')}`;
+        if (vms_emulator.length) tip += `\nemulator → ${vms_emulator.join(', ')}`;
+        if (is_isolated) tip += '\n[isolé]';
+
+        gridH += `<div class="cpu-cell relative flex flex-col items-center justify-center rounded select-none"
+            style="width:48px;height:48px;background:${bg};border:${borderW} ${borderStyle} ${border};"
+            title="${esc(tip)}">
+            <span class="text-xs font-mono font-bold" style="color:${textColor}">${cpu}</span>
+            ${badge ? `<span class="absolute top-0.5 right-1 text-[9px] font-bold opacity-80" style="color:${textColor}">${badge}</span>` : ''}
+        </div>`;
+    });
+    gridEl.innerHTML = gridH;
+
+    // Stats bar
+    const total = cpuMap.length;
+    statsEl.innerHTML = `
+        <span>${total} CPUs</span>
+        <span class="text-blue-400">${cntVcpu} vCPU</span>
+        <span class="text-slate-400">${cntEmu} emulator</span>
+        <span class="text-amber-400">${cntIsolFree} isolés libres</span>
+        <span>${cntFree} libres</span>
+        ${cntConflict ? `<span class="text-rose-400 font-semibold">⚠ ${cntConflict} conflit(s) !</span>` : ''}
+    `;
+}
+
+// ── VM Detail Cards ──────────────────────────────────────────────────────────
+function renderVmCards(vms, vmColorMap, el) {
+    if (!vms?.length) {
+        el.innerHTML = '<p class="text-xs text-slate-500">Aucune VM détectée.</p>';
+        return;
+    }
+
+    el.innerHTML = vms.map(vm => {
+        const c = vmColorMap[vm.name] ?? { fill: '#6b7280', text: '#f3f4f6' };
+
+        if (vm.error && !vm.vcpu_count) {
+            return `<div class="rounded-xl border border-slate-700/60 bg-slate-950/40 p-4">
+                <div class="flex items-center gap-2 mb-2">
+                    <div class="w-3 h-3 rounded-sm" style="background:${c.fill}"></div>
+                    <span class="font-semibold text-slate-200">${esc(vm.name)}</span>
+                    <span class="text-[11px] text-slate-500">@ ${esc(vm.host ?? '?')}</span>
+                </div>
+                <p class="text-xs text-rose-400">${esc(vm.error)}</p>
+            </div>`;
+        }
+
+        const topo = vm.topology;
+        const topoStr = topo
+            ? `${topo.sockets ?? 1}S × ${topo.cores ?? 1}C × ${topo.threads ?? 1}T`
+            : `${vm.vcpu_count ?? '?'} vCPU`;
+
+        const memGiB = vm.memory_kb ? (vm.memory_kb / 1024 / 1024).toFixed(1) : null;
+
+        // vcpupin rows
+        const pinRows = (vm.vcpupins ?? []).map(p =>
+            `<tr>
+                <td class="pr-4 py-0.5 text-[11px] text-slate-400 font-mono">vCPU ${p.vcpu}</td>
+                <td class="py-0.5 text-[11px] text-slate-200 font-mono">${esc(p.cpuset_str)}</td>
+            </tr>`
+        ).join('');
+
+        // RT sched
+        const schedLines = [];
+        (vm.vcpuscheds ?? []).forEach(s => {
+            schedLines.push(`vCPU ${s.vcpus}: ${s.scheduler.toUpperCase()} prio ${s.priority}`);
+        });
+        if (vm.emulatorsched) {
+            schedLines.push(`emulator: ${vm.emulatorsched.scheduler.toUpperCase()} prio ${vm.emulatorsched.priority}`);
+        }
+
+        // Overlap / conflict warning
+        const conflictWarn = (vm.vcpupins ?? []).some(p =>
+            p.cpus.some(cpu => (vm.emulatorpin_cpus ?? []).includes(cpu) && false) // placeholder
+        );
+
+        return `<div class="rounded-xl border bg-slate-950/40 p-4" style="border-color:${c.fill}50">
+            <div class="flex flex-wrap items-center gap-3 mb-3">
+                <div class="w-3.5 h-3.5 rounded-sm flex-shrink-0" style="background:${c.fill}"></div>
+                <span class="font-semibold text-slate-100 text-sm">${esc(vm.name)}</span>
+                <span class="text-[11px] text-slate-500">@ ${esc(vm.host ?? '?')}</span>
+                <span class="ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${esc(topoStr)}</span>
+                ${memGiB ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${memGiB} GiB</span>` : ''}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <!-- CPU Pinning -->
+                <div>
+                    <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1.5">CPU Pinning</p>
+                    ${pinRows
+                        ? `<table class="w-full"><tbody>${pinRows}</tbody></table>`
+                        : '<p class="text-[11px] text-slate-600">Aucun vcpupin défini</p>'}
+                    ${vm.emulatorpin_cpus?.length
+                        ? `<div class="mt-1.5 flex items-center gap-2">
+                            <span class="text-[11px] text-slate-500">emulatorpin:</span>
+                            <span class="text-[11px] text-slate-300 font-mono">${vm.emulatorpin_cpus.join(', ')}</span>
+                           </div>`
+                        : ''}
+                </div>
+
+                <!-- RT Scheduling -->
+                <div>
+                    <p class="text-[11px] text-slate-500 uppercase tracking-wide mb-1.5">Ordonnancement RT</p>
+                    ${schedLines.length
+                        ? schedLines.map(s => `<p class="text-[11px] text-slate-200 font-mono">${esc(s)}</p>`).join('')
+                        : '<p class="text-[11px] text-slate-600">Pas de priorité RT configurée</p>'}
+                    ${vm.numatune?.nodeset
+                        ? `<div class="mt-2 flex items-center gap-2">
+                            <span class="text-[11px] text-slate-500">NUMA:</span>
+                            <span class="text-[11px] text-slate-300 font-mono">${esc(vm.numatune.mode)} nodeset=${esc(vm.numatune.nodeset)}</span>
+                           </div>`
+                        : ''}
+                </div>
+            </div>
+
+            ${vm.error ? `<p class="mt-2 text-[11px] text-amber-400">⚠ ${esc(vm.error)}</p>` : ''}
+        </div>`;
+    }).join('');
+}
+
+// ── Main handler ─────────────────────────────────────────────────────────────
+runBtn.addEventListener('click', async () => {
+    runBtn.disabled = true;
+    statusEl.textContent = '{{ t(lang, "seapath_running") }}';
+    statusEl.className = 'text-xs text-slate-400';
+    results.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/seapath/run?lang=' + encodeURIComponent(lang));
+        const data = await res.json();
+
+        if (!res.ok) {
+            statusEl.textContent = data.error ?? '{{ t(lang, "seapath_error") }}';
+            statusEl.className = 'text-xs text-rose-400';
+            return;
+        }
+
+        const vmColorMap = buildVmColorMap(data.vms ?? []);
+
+        renderCluster(data.cluster ?? {}, document.getElementById('cluster-content'));
+        renderRT(data.rt_config ?? {}, document.getElementById('rt-content'));
+        renderHugepages(data.hugepages ?? {}, document.getElementById('hp-content'));
+        renderCpuMap(
+            data.cpu_map ?? [], data.vms ?? [], vmColorMap,
+            document.getElementById('cpu-grid'),
+            document.getElementById('cpu-legend'),
+            document.getElementById('cpu-stats')
+        );
+        renderVmCards(data.vms ?? [], vmColorMap, document.getElementById('vm-cards'));
+
+        results.classList.remove('hidden');
+        statusEl.textContent = '{{ t(lang, "seapath_done") }}';
+        statusEl.className = 'text-xs text-slate-400';
+    } catch (err) {
+        statusEl.textContent = 'Erreur: ' + err;
+        statusEl.className = 'text-xs text-rose-400';
+    } finally {
+        runBtn.disabled = false;
+    }
+});
+</script>
+{% endblock %}

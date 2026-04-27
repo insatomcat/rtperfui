@@ -43,6 +43,15 @@
                {% endif %}">
                 {{ t(lang, "tab_systemcheck") }}
             </a>
+            <a href="/seapath?lang={{ lang }}"
+               class="inline-flex items-center rounded-full border px-3 py-1 font-medium
+               {% if active_tab == 'seapath' %}
+                    border-emerald-500/40 bg-emerald-500/10 text-emerald-300
+               {% else %}
+                    border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-200
+               {% endif %}">
+                {{ t(lang, "tab_seapath") }}
+            </a>
             <div class="ml-3 flex gap-1">
                 <a href="{{ request.url.path }}?lang=fr"
                    class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium
