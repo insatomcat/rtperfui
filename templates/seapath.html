@@ -132,10 +132,13 @@ function renderCluster(cluster, el) {
             ${cluster.vms.map(vm => {
                 const s = stateStyle[vm.state] || stateStyle.unknown;
                 const hostTxt = vm.host ? ` @ ${esc(vm.host)}` : '';
+                const resolution = vm._debug_resolution ? JSON.stringify(vm._debug_resolution) : 'n/a';
                 const debugTip = (vm._debug_node_summaries || [])
-                    .map(n => `${n.node}: ${n.last_op} rc=${n.rc} (${n.n_ops} ops)`)
-                    .join('\n') || 'no ops in CIB status';
-                return `<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] border ${s}" title="${esc(debugTip)}">
+                    .map(n => `${n.node}: last_op=${n.last_op ?? 'none'} rc=${n.rc ?? '-'} ops=${n.n_ops} shutdown=${n.has_shutdown ? 'yes' : 'no'} children=[${(n._ns_child_tags||[]).join(',')}]`)
+                    .join('\n') || 'no node_state entries found';
+                const sourceLine = `source=${vm._debug_state_source ?? 'unknown'}`;
+                const fullTip = `${sourceLine}\n${debugTip}\nresolution=${resolution}`;
+                return `<span class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] border ${s}" title="${esc(fullTip)}">
                     <span class="font-mono font-semibold">${esc(vm.name)}</span>
                     <span class="opacity-70">${esc(vm.state)}${hostTxt}</span>
                 </span>`;
@@ -146,6 +149,40 @@ function renderCluster(cluster, el) {
 
     if (cluster.error)
         h += `<p class="mt-2 text-xs text-rose-400">⚠ ${esc(cluster.error)}</p>`;
+
+    if (cluster._debug_status_present !== undefined || cluster._debug_root_children || cluster._cib_status_preview) {
+        const rootChildren = (cluster._debug_root_children || []).join(', ') || 'n/a';
+        const statusPresent = cluster._debug_status_present ? 'yes' : 'no';
+        const statusPreview = cluster._cib_status_preview || 'status element not found in CIB';
+        const cibSourcePath = cluster._debug_cib_source_path || 'none';
+        const cibAttempts = (cluster._debug_cib_read_attempts || []).map(a =>
+            `${a.path} has_status=${a.has_status ?? 'n/a'} size=${a.size ?? 0} ${a.error ? `error=${a.error}` : ''} ${a.parse_error ? `parse_error=${a.parse_error}` : ''}`
+        ).join('\n');
+        const liveSource = cluster._debug_live_xml_source_cmd || 'none';
+        const liveRootTag = cluster._debug_live_xml_root_tag || 'n/a';
+        const liveAttempts = (cluster._debug_live_xml_attempts || []).map(a =>
+            `${a.cmd} rc=${a.returncode ?? '?'} out=${a.stdout_len ?? 0} err=${a.stderr_len ?? 0} preview=${a.preview ?? a.error ?? ''}`
+        ).join('\n');
+        const pengineSource = cluster._debug_pengine_source_file || 'none';
+        const pengineAttempts = (cluster._debug_pengine_attempts || []).map(a =>
+            `${a.dir ? `dir=${a.dir} exists=${a.exists}` : ''}${a.file ? ` file=${a.file}` : ''}${a.has_status !== undefined ? ` has_status=${a.has_status}` : ''}${a.size !== undefined ? ` size=${a.size}` : ''}${a.error ? ` error=${a.error}` : ''}${a.parse_error ? ` parse_error=${a.parse_error}` : ''}`
+        ).join('\n');
+        h += `<details class="mt-3">
+            <summary class="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">Debug CIB ▾</summary>
+            <div class="mt-1 space-y-1">
+                <p class="text-[11px] text-slate-400">root children: <span class="font-mono text-slate-200">${esc(rootChildren)}</span></p>
+                <p class="text-[11px] text-slate-400">status present: <span class="font-mono text-slate-200">${esc(statusPresent)}</span></p>
+                <p class="text-[11px] text-slate-400">cib source path: <span class="font-mono text-slate-200">${esc(cibSourcePath)}</span></p>
+                <pre class="text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-snug">${esc(cibAttempts || 'no cib attempts')}</pre>
+                <p class="text-[11px] text-slate-400">live source cmd: <span class="font-mono text-slate-200">${esc(liveSource)}</span></p>
+                <p class="text-[11px] text-slate-400">live root tag: <span class="font-mono text-slate-200">${esc(liveRootTag)}</span></p>
+                <pre class="text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-snug">${esc(liveAttempts || 'no live attempts')}</pre>
+                <p class="text-[11px] text-slate-400">pengine source file: <span class="font-mono text-slate-200">${esc(pengineSource)}</span></p>
+                <pre class="text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-snug">${esc(pengineAttempts || 'no pengine attempts')}</pre>
+                <pre class="text-[10px] text-slate-300 whitespace-pre-wrap break-all leading-snug">${esc(statusPreview)}</pre>
+            </div>
+        </details>`;
+    }
 
     el.innerHTML = h;
 }
@@ -321,6 +358,10 @@ function renderCpuMap(cpuMap, vms, vmColorMap, gridEl, legendEl, statsEl) {
         <div class="flex items-center gap-1.5">
             <div class="w-4 h-4 rounded" style="background:#451a03;border:1px solid #d97706"></div>
             <span class="text-[11px] text-slate-400">Isolé libre</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <div class="w-4 h-4 rounded" style="background:#7c2d12;border:1px solid #fb923c"></div>
+            <span class="text-[11px] text-slate-400">Isolé (sibling HT occupé)</span>
         </div>`;
     vms.forEach(vm => {
         const c = vmColorMap[vm.name];
@@ -343,11 +384,11 @@ function renderCpuMap(cpuMap, vms, vmColorMap, gridEl, legendEl, statsEl) {
     legendEl.innerHTML = legH;
 
     // Grid cells
-    let gridH = '';
-    let cntFree = 0, cntIsolFree = 0, cntVcpu = 0, cntEmu = 0, cntConflict = 0;
+    let cntFree = 0, cntIsolFree = 0, cntIsolHtBusy = 0, cntVcpu = 0, cntEmu = 0, cntConflict = 0;
+    const cellHtmlByCpu = new Map();
 
     cpuMap.forEach(entry => {
-        const { cpu, status, vms_vcpu, vms_emulator, all_vms, is_isolated } = entry;
+        const { cpu, status, vms_vcpu, vms_emulator, all_vms, is_isolated, thread_siblings, sibling_occupied_cpus, topology } = entry;
 
         let bg = '#1e293b', border = '#334155', textColor = '#64748b';
         let borderStyle = 'solid', borderW = '1px';
@@ -372,24 +413,58 @@ function renderCpuMap(cpuMap, vms, vmColorMap, gridEl, legendEl, statsEl) {
         } else if (status === 'isolated_free') {
             bg = '#451a03'; border = '#d97706'; textColor = '#fbbf24';
             cntIsolFree++;
+        } else if (status === 'isolated_ht_busy') {
+            bg = '#7c2d12'; border = '#fb923c'; textColor = '#fdba74';
+            cntIsolHtBusy++;
         } else {
             cntFree++;
         }
 
         // Tooltip text
-        let tip = `CPU ${cpu}`;
+        let tip = `CPU ${cpu}\nstatus=${status}`;
+        if (topology) {
+            const pkg = topology.package_id ?? '?';
+            const core = topology.core_id ?? '?';
+            tip += `\npackage=${pkg} core=${core}`;
+        }
+        if (thread_siblings?.length) tip += `\nHT siblings: ${thread_siblings.join(', ')}`;
         if (status === 'conflict' || status === 'overlap') tip += `\n⚠ CONFLIT: ${all_vms.join(', ')}`;
         else if (vms_vcpu.length) tip += `\nvCPU → ${vms_vcpu.join(', ')}`;
         if (vms_emulator.length) tip += `\nemulator → ${vms_emulator.join(', ')}`;
         if (is_isolated) tip += '\n[isolé]';
+        if (sibling_occupied_cpus?.length) tip += `\nHT occupé sur: ${sibling_occupied_cpus.join(', ')}`;
 
-        gridH += `<div class="cpu-cell relative flex flex-col items-center justify-center rounded select-none"
+        const cellHtml = `<div class="cpu-cell relative flex flex-col items-center justify-center rounded select-none"
             style="width:48px;height:48px;background:${bg};border:${borderW} ${borderStyle} ${border};"
             title="${esc(tip)}">
             <span class="text-xs font-mono font-bold" style="color:${textColor}">${cpu}</span>
             ${badge ? `<span class="absolute top-0.5 right-1 text-[9px] font-bold opacity-80" style="color:${textColor}">${badge}</span>` : ''}
         </div>`;
+        cellHtmlByCpu.set(cpu, cellHtml);
     });
+
+    // Group by physical core (package_id/core_id), display HT threads in columns
+    const coreGroups = new Map();
+    cpuMap.forEach(entry => {
+        const pkg = entry.topology?.package_id ?? 0;
+        const core = entry.topology?.core_id ?? entry.cpu;
+        const key = `${pkg}:${core}`;
+        if (!coreGroups.has(key)) coreGroups.set(key, { pkg, core, cpus: [] });
+        coreGroups.get(key).cpus.push(entry.cpu);
+    });
+    const orderedGroups = [...coreGroups.values()]
+        .map(g => ({ ...g, cpus: g.cpus.sort((a, b) => a - b) }))
+        .sort((a, b) => a.pkg - b.pkg || a.core - b.core);
+
+    let gridH = '<div class="flex flex-wrap gap-2">';
+    orderedGroups.forEach(g => {
+        gridH += `<div class="numa-group rounded-md border border-slate-800 p-1.5 bg-slate-950/40">
+            <div class="text-[9px] text-slate-500 font-mono mb-1 text-center">P${g.pkg} C${g.core}</div>
+            <div class="flex flex-col gap-1">`;
+        g.cpus.forEach(cpu => { gridH += cellHtmlByCpu.get(cpu) || ''; });
+        gridH += '</div></div>';
+    });
+    gridH += '</div>';
     gridEl.innerHTML = gridH;
 
     // Stats bar
@@ -399,6 +474,7 @@ function renderCpuMap(cpuMap, vms, vmColorMap, gridEl, legendEl, statsEl) {
         <span class="text-blue-400">${cntVcpu} vCPU</span>
         <span class="text-slate-400">${cntEmu} emulator</span>
         <span class="text-amber-400">${cntIsolFree} isolés libres</span>
+        <span class="text-orange-300">${cntIsolHtBusy} isolés HT occupés</span>
         <span>${cntFree} libres</span>
         ${cntConflict ? `<span class="text-rose-400 font-semibold">⚠ ${cntConflict} conflit(s) !</span>` : ''}
     `;
@@ -456,14 +532,17 @@ function renderVmCards(vms, vmColorMap, el) {
 
         const stateBadge = { started: 'text-emerald-400', stopped: 'text-slate-500', disabled: 'text-amber-400', unknown: 'text-slate-600' };
         const stateColor = stateBadge[vm.state] || stateBadge.unknown;
+        const resolution = vm._debug_resolution ? JSON.stringify(vm._debug_resolution) : 'n/a';
         const debugTip = (vm._debug_node_summaries || [])
-            .map(n => `${n.node}: ${n.last_op} rc=${n.rc} (${n.n_ops} ops)`).join('\n') || '';
+            .map(n => `${n.node}: last_op=${n.last_op ?? 'none'} rc=${n.rc ?? '-'} ops=${n.n_ops} shutdown=${n.has_shutdown ? 'yes' : 'no'} children=[${(n._ns_child_tags||[]).join(',')}]`)
+            .join('\n') || '';
+        const debugFull = `source=${vm._debug_state_source ?? 'unknown'}\n${debugTip}\nresolution=${resolution}`;
 
         return `<div class="rounded-xl border bg-slate-950/40 p-4" style="border-color:${c.fill}50">
             <div class="flex flex-wrap items-center gap-3 mb-3">
                 <div class="w-3.5 h-3.5 rounded-sm flex-shrink-0" style="background:${c.fill}"></div>
                 <span class="font-semibold text-slate-100 text-sm">${esc(vm.name)}</span>
-                <span class="text-[11px] ${stateColor}" title="${esc(debugTip)}">${esc(vm.state ?? '?')}</span>
+                <span class="text-[11px] ${stateColor}" title="${esc(debugFull)}">${esc(vm.state ?? '?')}</span>
                 ${vm.host ? `<span class="text-[11px] text-slate-500">@ ${esc(vm.host)}</span>` : ''}
                 <span class="ml-auto inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${esc(topoStr)}</span>
                 ${memGiB ? `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] bg-slate-800 border border-slate-700 text-slate-300">${memGiB} GiB</span>` : ''}

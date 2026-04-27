@@ -21,8 +21,10 @@ Volume=/run/tuned:/run/tuned:ro
 Volume=/etc/tuned:/etc/tuned:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
 
-# Pacemaker CIB — needed for cluster status (Seapath tab)
-Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro
+# Runtime directories (covers pacemaker variants under /run/*)
+Volume=/run:/run:ro
+# Pacemaker state (CIB + pengine inputs)
+Volume=/var/lib/pacemaker:/var/lib/pacemaker:ro
 
 # Corosync config — used to detect cluster mode
 Volume=/etc/corosync/corosync.conf:/etc/corosync/corosync.conf:ro

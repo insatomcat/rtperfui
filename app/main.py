@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any
 import subprocess
 import shlex
 import re
+import bz2
 import xml.etree.ElementTree as ET
 
 from fastapi import FastAPI, Request, Form
@@ -978,10 +979,73 @@ def _get_all_cpus() -> List[int]:
     return sorted(set(cpus))
 
 
+def _get_cpu_topology(cpus: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Read CPU topology from sysfs for HT/core grouping."""
+    topo: Dict[int, Dict[str, Any]] = {}
+    for cpu in cpus:
+        base = Path(f"/sys/devices/system/cpu/cpu{cpu}/topology")
+        core_id: Optional[int] = None
+        package_id: Optional[int] = None
+        siblings: List[int] = [cpu]
+
+        try:
+            p = base / "core_id"
+            if p.exists():
+                core_id = int(p.read_text().strip())
+        except (OSError, ValueError):
+            pass
+        try:
+            p = base / "physical_package_id"
+            if p.exists():
+                package_id = int(p.read_text().strip())
+        except (OSError, ValueError):
+            pass
+        try:
+            sib = base / "thread_siblings_list"
+            if sib.exists():
+                siblings = _parse_cpuset(sib.read_text().strip()) or [cpu]
+        except OSError:
+            pass
+
+        topo[cpu] = {
+            "cpu": cpu,
+            "core_id": core_id,
+            "package_id": package_id,
+            "thread_siblings": siblings,
+        }
+
+    return topo
+
+
 CIB_PATHS = [
+    # Runtime CIB locations (preferred: includes <status>)
+    Path("/run/pacemaker/cib/cib.xml"),
+    Path("/run/pcmk/cib/cib.xml"),
+    # Persistent/on-disk CIB (can be config-only on some setups)
     Path("/var/lib/pacemaker/cib/cib.xml"),
     Path("/var/lib/heartbeat/crm/cib.xml"),
 ]
+
+
+def _xml_local_name(tag: str) -> str:
+    if "}" in tag:
+        return tag.rsplit("}", 1)[-1]
+    return tag
+
+
+def _xml_find_first_by_local_name(parent: Any, name: str) -> Optional[Any]:
+    if parent is None:
+        return None
+    for elt in parent.iter():
+        if _xml_local_name(elt.tag) == name:
+            return elt
+    return None
+
+
+def _xml_find_all_by_local_name(parent: Any, name: str) -> List[Any]:
+    if parent is None:
+        return []
+    return [elt for elt in parent.iter() if _xml_local_name(elt.tag) == name]
 
 
 
@@ -994,37 +1058,66 @@ def _safe_call_id(op: Any) -> int:
 
 
 def _cib_ops_for_resource(node_state_elt: Any, resource_id: str) -> List[Any]:
-    """Collect all operation elements for resource_id under a node_state, handling both
-    pacemaker 2.x (lrm/lrm_resources/lrm_resource/lrm_rsc_op) and
-    pacemaker 3.x (node_history/resource_history/op_history) structures."""
+    """Collect all operation elements for resource_id under a node_state.
+
+    Uses iter() at every level to be resilient to any intermediate wrapper elements,
+    and covers both pacemaker 2.x (lrm_rsc_op) and 3.x (op_history) naming.
+    """
     ops: List[Any] = []
+    op_tags = {"lrm_rsc_op", "op_history"}
+    rsc_tags = {"lrm_resource", "resource_history"}
 
-    # pacemaker 2.x
-    for lrm_rsc in node_state_elt.iter("lrm_resource"):
-        if lrm_rsc.get("id") == resource_id:
-            ops.extend(lrm_rsc.findall("lrm_rsc_op"))
-
-    # pacemaker 3.x
-    for rsc_hist in node_state_elt.iter("resource_history"):
-        if rsc_hist.get("id") == resource_id:
-            ops.extend(rsc_hist.findall("op_history"))
-            ops.extend(rsc_hist.findall("lrm_rsc_op"))
+    for rsc_elt in node_state_elt.iter():
+        tag = _xml_local_name(rsc_elt.tag)
+        if tag not in rsc_tags:
+            continue
+        # Pacemaker versions may encode resource identity with different attrs.
+        rsc_ids = {
+            rsc_elt.get("id"),
+            rsc_elt.get("resource"),
+            rsc_elt.get("rsc-id"),
+        }
+        if resource_id in rsc_ids:
+            for op_elt in rsc_elt.iter():
+                if _xml_local_name(op_elt.tag) in op_tags:
+                    ops.append(op_elt)
 
     return ops
 
 
 def _cib_resource_status(status_elt: Any, resource_id: str) -> Dict[str, Any]:
-    """Return {"host": str|None, "node_states": [...]} for a resource across all nodes."""
+    """Return {"host": str|None, "node_summaries": [...], "_debug_children": [...]}."""
     if status_elt is None:
-        return {"host": None}
+        return {"host": None, "node_summaries": []}
 
     best_host: Optional[str] = None
     node_summaries: List[Dict] = []
+    total_ops = 0
 
-    for ns in status_elt.findall("node_state"):
+    # Debug: record all direct child tags of status and node_state for diagnosis
+    status_child_tags = sorted({_xml_local_name(c.tag) for c in status_elt})
+
+    for ns in _xml_find_all_by_local_name(status_elt, "node_state"):
         node_name = ns.get("uname") or ns.get("id", "?")
+        ns_child_tags = sorted({_xml_local_name(c.tag) for c in ns})
         ops = _cib_ops_for_resource(ns, resource_id)
+        total_ops += len(ops)
+        has_shutdown = False
+        for nvpair in _xml_find_all_by_local_name(ns, "nvpair"):
+            if nvpair.get("name") == "shutdown" and nvpair.get("value"):
+                has_shutdown = True
+                break
+
         if not ops:
+            node_summaries.append({
+                "node": node_name,
+                "last_op": None,
+                "rc": None,
+                "op_status": None,
+                "n_ops": 0,
+                "has_shutdown": has_shutdown,
+                "_ns_child_tags": ns_child_tags,
+            })
             continue
 
         sorted_ops = sorted(ops, key=_safe_call_id)
@@ -1039,12 +1132,19 @@ def _cib_resource_status(status_elt: Any, resource_id: str) -> Dict[str, Any]:
             "rc": rc,
             "op_status": op_status,
             "n_ops": len(ops),
+            "has_shutdown": has_shutdown,
+            "_ns_child_tags": ns_child_tags,
         })
 
         if op_status == "0" and rc == "0" and op in ("start", "monitor"):
             best_host = node_name
 
-    return {"host": best_host, "node_summaries": node_summaries}
+    return {
+        "host": best_host,
+        "has_any_ops": total_ops > 0,
+        "node_summaries": node_summaries,
+        "_debug_status_child_tags": status_child_tags,
+    }
 
 
 def _prim_is_disabled(prim: Any) -> bool:
@@ -1056,46 +1156,227 @@ def _prim_is_disabled(prim: Any) -> bool:
     return False
 
 
+def _get_live_pacemaker_xml_debug() -> Dict[str, Any]:
+    """Try live Pacemaker XML sources (API/CLI), including host-root binaries."""
+    attempts: List[List[str]] = [
+        ["cibadmin", "-Q"],
+        ["/usr/sbin/cibadmin", "-Q"],
+        ["/usr/bin/cibadmin", "-Q"],
+        ["/proc/1/root/usr/sbin/cibadmin", "-Q"],
+        ["/proc/1/root/usr/bin/cibadmin", "-Q"],
+        ["crm_mon", "--as-xml", "-1"],
+        ["/usr/sbin/crm_mon", "--as-xml", "-1"],
+        ["/usr/bin/crm_mon", "--as-xml", "-1"],
+        ["/proc/1/root/usr/sbin/crm_mon", "--as-xml", "-1"],
+        ["/proc/1/root/usr/bin/crm_mon", "--as-xml", "-1"],
+    ]
+    debug_attempts: List[Dict[str, Any]] = []
+
+    for cmd in attempts:
+        res = _run_host_cmd(cmd, timeout=12)
+        if "error" in res:
+            debug_attempts.append({"cmd": " ".join(cmd), "error": res.get("error")})
+            continue
+
+        rc = int(res.get("returncode", 1))
+        out = (res.get("stdout") or "")
+        err = (res.get("stderr") or "")
+        preview = (out if out else err)[:240]
+        debug_attempts.append({
+            "cmd": " ".join(cmd),
+            "returncode": rc,
+            "stdout_len": len(out),
+            "stderr_len": len(err),
+            "preview": preview,
+        })
+
+        if rc != 0:
+            continue
+        if "<" not in out or ">" not in out:
+            continue
+        try:
+            root = ET.fromstring(out)
+        except ET.ParseError:
+            continue
+        return {
+            "xml": out,
+            "source_cmd": " ".join(cmd),
+            "root_tag": _xml_local_name(root.tag),
+            "debug_attempts": debug_attempts,
+        }
+
+    return {
+        "xml": None,
+        "source_cmd": None,
+        "root_tag": None,
+        "debug_attempts": debug_attempts,
+    }
+
+
+def _get_status_from_pengine_debug() -> Dict[str, Any]:
+    """Read latest pacemaker pengine input and extract <status> if present."""
+    pengine_dirs = [
+        Path("/var/lib/pacemaker/pengine"),
+        Path("/run/pacemaker/pengine"),
+        Path("/var/lib/pengine"),
+    ]
+    debug_attempts: List[Dict[str, Any]] = []
+    candidates: List[Path] = []
+
+    for d in pengine_dirs:
+        if not d.exists():
+            debug_attempts.append({"dir": str(d), "exists": False})
+            continue
+        debug_attempts.append({"dir": str(d), "exists": True})
+        candidates.extend(sorted(d.glob("pe-input-*.bz2")))
+        candidates.extend(sorted(d.glob("pe-input-*.xml")))
+
+    if not candidates:
+        return {"status_elt": None, "source_file": None, "debug_attempts": debug_attempts}
+
+    # Most recent first
+    candidates = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
+    best_status_elt: Optional[Any] = None
+    best_source_file: Optional[str] = None
+    best_ops_count = -1
+
+    for p in candidates[:20]:
+        try:
+            if p.suffix == ".bz2":
+                raw = bz2.open(p, mode="rt", encoding="utf-8", errors="ignore").read()
+            else:
+                raw = p.read_text(errors="ignore")
+        except OSError as exc:
+            debug_attempts.append({"file": str(p), "error": str(exc)})
+            continue
+
+        try:
+            root = ET.fromstring(raw)
+        except ET.ParseError as exc:
+            debug_attempts.append({"file": str(p), "parse_error": str(exc), "size": len(raw)})
+            continue
+
+        status_elt = _xml_find_first_by_local_name(root, "status")
+        ops_count = 0
+        if status_elt is not None:
+            for elt in status_elt.iter():
+                tag = _xml_local_name(elt.tag)
+                if tag in ("lrm_rsc_op", "op_history"):
+                    ops_count += 1
+
+        debug_attempts.append({
+            "file": str(p),
+            "size": len(raw),
+            "has_status": status_elt is not None,
+            "ops_count": ops_count,
+        })
+
+        if status_elt is not None and ops_count > best_ops_count:
+            best_ops_count = ops_count
+            best_status_elt = status_elt
+            best_source_file = str(p)
+
+            # Good enough: plenty of operation history.
+            if ops_count >= 10:
+                break
+
+    return {
+        "status_elt": best_status_elt,
+        "source_file": best_source_file,
+        "debug_attempts": debug_attempts,
+    }
+
+
 def _get_cluster_info() -> Dict[str, Any]:
     # 1. Detect cluster mode via corosync.conf (mounted read-only from host)
     is_cluster = Path("/etc/corosync/corosync.conf").exists()
     if not is_cluster:
         return {"mode": "standalone", "online_nodes": [], "vms": []}
 
-    # 2. Read CIB XML
+    # 2. Read CIB XML.
+    # We prefer a CIB that contains a runtime <status> section.
     cib_xml: Optional[str] = None
-    for p in CIB_PATHS:
-        if p.exists():
-            try:
-                cib_xml = p.read_text()
-                break
-            except OSError:
-                pass
+    cib_root: Optional[Any] = None
+    cib_source_path: Optional[str] = None
+    cib_read_attempts: List[Dict[str, Any]] = []
+    fallback_root: Optional[Any] = None
+    fallback_xml: Optional[str] = None
+    fallback_path: Optional[str] = None
 
-    if not cib_xml:
+    for p in CIB_PATHS:
+        if not p.exists():
+            continue
+        try:
+            raw = p.read_text()
+        except OSError as exc:
+            cib_read_attempts.append({"path": str(p), "error": str(exc)})
+            continue
+
+        try:
+            parsed = ET.fromstring(raw)
+        except ET.ParseError as exc:
+            cib_read_attempts.append({"path": str(p), "parse_error": str(exc), "size": len(raw)})
+            continue
+
+        has_status = _xml_find_first_by_local_name(parsed, "status") is not None
+        cib_read_attempts.append({"path": str(p), "size": len(raw), "has_status": has_status})
+        if has_status:
+            cib_xml = raw
+            cib_root = parsed
+            cib_source_path = str(p)
+            break
+
+        if fallback_root is None:
+            fallback_root = parsed
+            fallback_xml = raw
+            fallback_path = str(p)
+
+    if cib_root is None and fallback_root is not None:
+        cib_root = fallback_root
+        cib_xml = fallback_xml
+        cib_source_path = fallback_path
+
+    if not cib_xml or cib_root is None:
         return {
             "mode": "cluster",
             "error": (
                 "Cluster détecté mais CIB inaccessible. "
-                "Ajouter dans rtperfui.container : "
-                "Volume=/var/lib/pacemaker/cib/cib.xml:/var/lib/pacemaker/cib/cib.xml:ro"
+                "Monter un CIB live, ex: "
+                "Volume=/run/pacemaker/cib:/run/pacemaker/cib:ro"
             ),
             "online_nodes": [],
             "vms": [],
+            "_debug_cib_read_attempts": cib_read_attempts,
         }
 
-    # 3. Parse CIB XML
-    try:
-        root = ET.fromstring(cib_xml)
-    except ET.ParseError as exc:
-        return {"mode": "cluster", "error": f"CIB XML parse error: {exc}", "online_nodes": [], "vms": []}
+    # 3. Use selected CIB XML
+    root = cib_root
 
-    status_elt = root.find("status")
+    status_elt = _xml_find_first_by_local_name(root, "status")
+    live_xml_debug: Dict[str, Any] = {"source_cmd": None, "root_tag": None, "debug_attempts": []}
+    if status_elt is None:
+        # Static cib.xml can omit runtime status. Try live Pacemaker XML query.
+        live_xml_debug = _get_live_pacemaker_xml_debug()
+        live_xml = live_xml_debug.get("xml")
+        if live_xml:
+            try:
+                live_root = ET.fromstring(live_xml)
+                live_status = _xml_find_first_by_local_name(live_root, "status")
+                if live_status is not None:
+                    status_elt = live_status
+            except ET.ParseError:
+                pass
+    pengine_debug: Dict[str, Any] = {"source_file": None, "debug_attempts": []}
+    if status_elt is None:
+        pengine_debug = _get_status_from_pengine_debug()
+        pengine_status = pengine_debug.get("status_elt")
+        if pengine_status is not None:
+            status_elt = pengine_status
 
     # Online nodes
     online_nodes: List[str] = []
     if status_elt is not None:
-        for ns in status_elt.findall("node_state"):
+        for ns in _xml_find_all_by_local_name(status_elt, "node_state"):
             # Accept crmd=online OR in_ccm=true+join=member (pacemaker version variations)
             crmd_ok = ns.get("crmd") == "online"
             ccm_ok = ns.get("in_ccm") in ("true", "1") and ns.get("join") == "member"
@@ -1108,23 +1389,23 @@ def _get_cluster_info() -> Dict[str, Any]:
     dc: Optional[str] = None
     dc_uuid = root.get("dc-uuid")
     if dc_uuid:
-        config = root.find("configuration")
-        nodes_cfg = config.find("nodes") if config is not None else None
+        config = _xml_find_first_by_local_name(root, "configuration")
+        nodes_cfg = _xml_find_first_by_local_name(config, "nodes") if config is not None else None
         if nodes_cfg is not None:
-            for node in nodes_cfg.findall("node"):
+            for node in _xml_find_all_by_local_name(nodes_cfg, "node"):
                 if node.get("id") == dc_uuid:
                     dc = node.get("uname") or dc_uuid
                     break
         if dc is None:
             dc = dc_uuid
 
-    # All VirtualDomain primitives with their status
+    # All VirtualDomain primitives with their status (CIB-only approach).
     vms: List[Dict] = []
-    config = root.find("configuration")
+    config = _xml_find_first_by_local_name(root, "configuration")
     if config is not None:
-        resources_elt = config.find("resources")
+        resources_elt = _xml_find_first_by_local_name(config, "resources")
         if resources_elt is not None:
-            for prim in resources_elt.iter("primitive"):
+            for prim in _xml_find_all_by_local_name(resources_elt, "primitive"):
                 if not (prim.get("class") == "ocf"
                         and prim.get("provider") == "seapath"
                         and prim.get("type") == "VirtualDomain"):
@@ -1134,27 +1415,57 @@ def _get_cluster_info() -> Dict[str, Any]:
                 rsc_status = _cib_resource_status(status_elt, vm_id)
                 host = rsc_status.get("host")
 
+                state_source = "unknown"
+                resolution_debug: Dict[str, Any] = {"disabled_in_cib": disabled}
                 if disabled:
                     vm_state = "disabled"
+                    state_source = "cib_meta_target_role"
                 elif host:
                     vm_state = "started"
-                elif rsc_status.get("node_summaries"):
+                    state_source = "cib_status_host"
+                elif rsc_status.get("has_any_ops"):
                     vm_state = "stopped"
+                    state_source = "cib_status_ops_no_running_host"
+                elif rsc_status.get("node_summaries"):
+                    vm_state = "unknown"
+                    state_source = "cib_status_nodes_without_ops"
                 else:
                     vm_state = "unknown"
+                    state_source = "unknown"
 
                 vms.append({
                     "name": vm_id,
                     "host": host,
                     "state": vm_state,
+                    "_debug_state_source": state_source,
+                    "_debug_resolution": resolution_debug,
                     "_debug_node_summaries": rsc_status.get("node_summaries", []),
                 })
+
+    # Debug: dump a preview of the raw <status> XML so we can inspect the real structure
+    cib_status_preview: Optional[str] = None
+    if status_elt is not None:
+        try:
+            raw = ET.tostring(status_elt, encoding="unicode")
+            cib_status_preview = raw[:4000] + ("…" if len(raw) > 4000 else "")
+        except Exception:
+            pass
 
     return {
         "mode": "cluster",
         "dc": dc,
         "online_nodes": online_nodes,
         "vms": vms,
+        "_debug_status_present": status_elt is not None,
+        "_debug_cib_source_path": cib_source_path,
+        "_debug_cib_read_attempts": cib_read_attempts,
+        "_debug_root_children": sorted({_xml_local_name(c.tag) for c in root}),
+        "_debug_live_xml_source_cmd": live_xml_debug.get("source_cmd"),
+        "_debug_live_xml_root_tag": live_xml_debug.get("root_tag"),
+        "_debug_live_xml_attempts": live_xml_debug.get("debug_attempts", []),
+        "_debug_pengine_source_file": pengine_debug.get("source_file"),
+        "_debug_pengine_attempts": pengine_debug.get("debug_attempts", []),
+        "_cib_status_preview": cib_status_preview,
     }
 
 
@@ -1381,6 +1692,7 @@ def run_seapath_checks() -> Dict[str, Any]:
         vms_detailed.append(parsed)
 
     all_cpus = _get_all_cpus()
+    cpu_topology = _get_cpu_topology(all_cpus)
     isolated_cpus = detect_isolated_cpus()
 
     cpu_assignment: Dict[int, Dict] = {cpu: {"vms_vcpu": [], "vms_emulator": []} for cpu in all_cpus}
@@ -1403,6 +1715,14 @@ def run_seapath_checks() -> Dict[str, Any]:
         vms_e = entry["vms_emulator"]
         all_vms = sorted(set(vms_v + vms_e))
         is_isolated = cpu in isolated_cpus
+        siblings = cpu_topology.get(cpu, {}).get("thread_siblings", [cpu])
+        sibling_occupied: List[int] = []
+        for sib in siblings:
+            if sib == cpu:
+                continue
+            sib_entry = cpu_assignment.get(sib, {"vms_vcpu": [], "vms_emulator": []})
+            if sib_entry["vms_vcpu"] or sib_entry["vms_emulator"]:
+                sibling_occupied.append(sib)
         conflict = len(set(vms_v)) > 1
         overlap = bool(vms_v and vms_e and not set(vms_v).issuperset(set(vms_e)))
 
@@ -1414,6 +1734,8 @@ def run_seapath_checks() -> Dict[str, Any]:
             status = "vcpu"
         elif vms_e:
             status = "emulator"
+        elif is_isolated and sibling_occupied:
+            status = "isolated_ht_busy"
         elif is_isolated:
             status = "isolated_free"
         else:
@@ -1423,6 +1745,9 @@ def run_seapath_checks() -> Dict[str, Any]:
             "cpu": cpu, "status": status,
             "vms_vcpu": vms_v, "vms_emulator": vms_e,
             "all_vms": all_vms, "is_isolated": is_isolated,
+            "thread_siblings": siblings,
+            "sibling_occupied_cpus": sibling_occupied,
+            "topology": cpu_topology.get(cpu, {}),
         })
 
     return {
@@ -1431,6 +1756,7 @@ def run_seapath_checks() -> Dict[str, Any]:
         "rt_config": _get_rt_config_seapath(),
         "hugepages": _get_hugepages_info(),
         "cpu_map": cpu_map,
+        "cpu_topology": cpu_topology,
         "all_cpus": all_cpus,
         "isolated_cpus": isolated_cpus,
     }
