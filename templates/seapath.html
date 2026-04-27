@@ -72,6 +72,8 @@ const lang = "{{ lang }}";
 const runBtn = document.getElementById("run-btn");
 const statusEl = document.getElementById("status");
 const results = document.getElementById("results");
+let lastSeapathData = null;
+let showDisabledVms = false;
 
 // VM color palette — full + dark variant for emulator cells
 const VM_PALETTE = [
@@ -89,6 +91,11 @@ function buildVmColorMap(vms) {
     const map = {};
     vms.forEach((vm, i) => { map[vm.name] = VM_PALETTE[i % VM_PALETTE.length]; });
     return map;
+}
+
+function filterVmsForViews(vms, includeDisabled) {
+    if (includeDisabled) return vms;
+    return (vms || []).filter(vm => vm.state !== 'disabled');
 }
 
 function esc(s) {
@@ -583,6 +590,49 @@ function renderVmCards(vms, vmColorMap, el) {
     }).join('');
 }
 
+function renderSeapathViews(data) {
+    const allVms = data.vms ?? [];
+    const visibleVms = filterVmsForViews(allVms, showDisabledVms);
+    const vmColorMap = buildVmColorMap(visibleVms);
+
+    renderCluster(data.cluster ?? {}, document.getElementById('cluster-content'));
+    renderRT(data.rt_config ?? {}, document.getElementById('rt-content'));
+    renderHugepages(data.hugepages ?? {}, document.getElementById('hp-content'));
+    renderCpuMap(
+        data.cpu_map ?? [], visibleVms, vmColorMap,
+        document.getElementById('cpu-grid'),
+        document.getElementById('cpu-legend'),
+        document.getElementById('cpu-stats')
+    );
+    renderVmCards(visibleVms, vmColorMap, document.getElementById('vm-cards'));
+}
+
+function ensureDisabledToggle() {
+    if (document.getElementById('toggle-disabled-vms')) return;
+
+    const vmSection = document.getElementById('vm-cards')?.closest('section');
+    if (!vmSection) return;
+    const title = vmSection.querySelector('h2');
+    if (!title) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'mb-2 flex justify-end';
+    wrap.innerHTML = `
+        <label class="inline-flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+            <input id="toggle-disabled-vms" type="checkbox" class="accent-emerald-500">
+            Afficher les VM désactivées
+        </label>
+    `;
+    title.insertAdjacentElement('afterend', wrap);
+
+    const toggle = document.getElementById('toggle-disabled-vms');
+    toggle.checked = showDisabledVms;
+    toggle.addEventListener('change', (e) => {
+        showDisabledVms = !!e.target.checked;
+        if (lastSeapathData) renderSeapathViews(lastSeapathData);
+    });
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 runBtn.addEventListener('click', async () => {
     runBtn.disabled = true;
@@ -600,18 +650,9 @@ runBtn.addEventListener('click', async () => {
             return;
         }
 
-        const vmColorMap = buildVmColorMap(data.vms ?? []);
-
-        renderCluster(data.cluster ?? {}, document.getElementById('cluster-content'));
-        renderRT(data.rt_config ?? {}, document.getElementById('rt-content'));
-        renderHugepages(data.hugepages ?? {}, document.getElementById('hp-content'));
-        renderCpuMap(
-            data.cpu_map ?? [], data.vms ?? [], vmColorMap,
-            document.getElementById('cpu-grid'),
-            document.getElementById('cpu-legend'),
-            document.getElementById('cpu-stats')
-        );
-        renderVmCards(data.vms ?? [], vmColorMap, document.getElementById('vm-cards'));
+        lastSeapathData = data;
+        ensureDisabledToggle();
+        renderSeapathViews(data);
 
         results.classList.remove('hidden');
         statusEl.textContent = '{{ t(lang, "seapath_done") }}';
