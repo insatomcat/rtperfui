@@ -1172,14 +1172,9 @@ def _get_cluster_info() -> Dict[str, Any]:
 
 
 def _get_vm_xml(vm_name: str) -> Optional[str]:
-    # Seapath naming convention: image is "system_{vm_name}" in the default pool.
-    # Fallback to pool/image and bare name for flexibility.
-    for spec in (f"system_{vm_name}", f"system/{vm_name}", vm_name):
-        result = _run_cmd(["rbd", "image-meta", "get", spec, "xml"], timeout=10)
-        if "error" not in result and result.get("returncode", 1) == 0:
-            txt = result.get("stdout", "").strip()
-            if txt:
-                return txt
+    result = _run_cmd(["rbd", "image-meta", "get", f"system_{vm_name}", "xml"], timeout=10)
+    if "error" not in result and result.get("returncode", 1) == 0:
+        return result.get("stdout", "").strip() or None
     return None
 
 
