@@ -45,11 +45,36 @@ Web application in Python (FastAPI) that provides a frontend to run real‑time 
     - **PTP** clock presence (`/sys/class/ptp`).
   - Detailed report with status per check (`OK`, `WARNING`, `INFO`, etc.).
 
+- **`seapath` tab**:
+  - Single button that analyses the Seapath configuration of the host:
+    - **Cluster / standalone detection** via `/etc/corosync/corosync.conf`.
+    - In cluster mode: reads the Pacemaker CIB (runtime `/run/pacemaker/cib/cib.xml` preferred,
+      falls back to `/var/lib/pacemaker/cib/cib.xml`, live `cibadmin -Q`, `crm_mon --as-xml`,
+      or the latest pengine input file).
+    - Lists all `ocf:seapath:VirtualDomain` resources with their state (`started`, `stopped`,
+      `disabled`, `unknown`) and the node they run on.
+    - **RT configuration**: active tuned profile (with key `tuned.conf` sections), isolated CPUs,
+      boot cmdline (RT‑relevant parameters highlighted), and RT sysctl values.
+    - **Hugepages**: 2 MiB / 1 GiB counts, per‑NUMA breakdown, THP status.
+    - **Interactive CPU map**: color‑coded grid (one cell per logical CPU) showing which VM each
+      CPU is assigned to (vCPU pin or emulatorpin), free/isolated/HT‑conflict state.
+      Cells are grouped by physical core (package × core) to visualise Hyper‑Threading pairs.
+    - **VM detail cards**: per‑VM vCPU topology, vcpupin / emulatorpin table, RT scheduling
+      (vcpusched / emulatorsched priorities), NUMA policy, and memory size.
+    - Toggle to show or hide disabled VMs across all views.
+    - When running inside a container, falls back to `nsenter` into PID‑1 namespaces to reach
+      host‑only binaries (`cibadmin`, `rbd`, etc.).
+
 ## Requirements
 
 - Python 3.10+ recommended.
 - `cyclictest` installed on the host (package `rt-tests` on most Linux distros).
 - Sufficient privileges to run real‑time tasks (often `root` or appropriate RT capabilities).
+- **For the Seapath tab (optional):**
+  - `rbd` (package `ceph-common`) — to retrieve per‑VM libvirt XML from Ceph RBD metadata.
+  - `cibadmin` or `crm_mon` — to query the live Pacemaker CIB (only needed if no CIB file is
+    accessible at `/run/pacemaker/cib/cib.xml` or `/var/lib/pacemaker/cib/cib.xml`).
+  - Read access to `/etc/corosync/corosync.conf` (cluster detection) and `/etc/ceph` (RBD auth).
 
 ## Installation (bare metal)
 
@@ -101,6 +126,13 @@ If `cyclictest` is not found or returns an error, an explicit error message is s
     - Each card corresponds to a specific RT configuration aspect.
     - Badge color (`OK`, `WARNING`, `INFO`) helps quickly spot items that may need attention.
 
+- **seapath**:
+  - Open the `seapath` tab.
+  - Click **Analyze**.
+  - The page displays four sections: cluster status, RT configuration, hugepages, CPU map, and VM
+    detail cards.
+  - Disabled VMs are hidden by default; use the toggle above the VM cards to show them.
+
 ## Containerisation (Docker / Podman)
 
 A `Dockerfile` is provided to build a self‑contained image including:
@@ -135,10 +167,18 @@ podman run --rm -p 8000:8000 \
   -v /sys:/sys \
   -v /run/tuned:/run/tuned:ro \
   -v /etc/tuned:/etc/tuned:ro \
-  -v /proc:/proc:ro \
   -v /dev/cpu_dma_latency:/dev/cpu_dma_latency \
+  -v /run:/run:ro \
+  -v /var/lib/pacemaker:/var/lib/pacemaker:ro \
+  -v /etc/corosync/corosync.conf:/etc/corosync/corosync.conf:ro \
+  -v /etc/ceph:/etc/ceph:ro \
   rtperfui:latest
 ```
+
+> **Note:** `/proc` is **not** mounted explicitly. In a `--privileged` container, the container's
+> own `/proc` already reflects host kernel values for non‑namespaced paths (`cmdline`, `cpuinfo`,
+> `meminfo`, `sys/kernel/*`, `sys/vm/*`, `irq`, etc.). Mounting `/proc` wholesale breaks `runc`
+> network initialisation (read‑only filesystem error).
 
 Then open `http://localhost:8000`.
 
@@ -164,12 +204,22 @@ AddCapability=CAP_SYS_NICE
 Ulimit=rtprio=99
 Ulimit=memlock=-1
 
-# Expose host kernel/sysfs/procfs needed for checks and RT tools
+# Expose host sysfs needed for checks and RT tools
+# Note: /proc is NOT mounted — a --privileged container's own /proc already
+# reflects host kernel values; mounting it wholesale breaks runc network init.
 Volume=/sys:/sys
 Volume=/run/tuned:/run/tuned:ro
 Volume=/etc/tuned:/etc/tuned:ro
-Volume=/proc:/proc:ro
 Volume=/dev/cpu_dma_latency:/dev/cpu_dma_latency
+
+# Runtime directories (covers pacemaker variants under /run/*)
+Volume=/run:/run:ro
+# Pacemaker state (CIB + pengine inputs) — needed for Seapath tab
+Volume=/var/lib/pacemaker:/var/lib/pacemaker:ro
+# Corosync config — used to detect cluster mode
+Volume=/etc/corosync/corosync.conf:/etc/corosync/corosync.conf:ro
+# Ceph config + keyring — needed for rbd image-meta get (VM XML retrieval)
+Volume=/etc/ceph:/etc/ceph:ro
 
 Environment=PYTHONUNBUFFERED=1
 [Service]
@@ -206,4 +256,5 @@ WantedBy=default.target
 - Real‑time streaming of measurements (WebSocket or SSE).
 - Export of results (JSON/CSV).
 - More advanced `cyclictest` options (multi‑threads, detailed histograms, etc.).
+- Seapath: live VM migration tracking and per‑node CPU assignment comparison.
 
