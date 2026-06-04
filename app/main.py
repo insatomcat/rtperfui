@@ -51,6 +51,76 @@ def parse_vm_color_defaults() -> Dict[str, str]:
     return out
 
 
+SEAPATH_MSG_KEYS = (
+    "seapath_vm_color_auto",
+    "seapath_color_hex",
+    "seapath_vm_colors_pick",
+    "seapath_show_disabled_vms",
+    "seapath_client_error",
+    "seapath_cluster_mode_cluster",
+    "seapath_cluster_mode_standalone",
+    "seapath_cluster_dc",
+    "seapath_cluster_online_nodes",
+    "seapath_cluster_vd_resources",
+    "seapath_cluster_no_vms",
+    "seapath_debug_cib",
+    "seapath_rt_tuned_profile",
+    "seapath_rt_scripts",
+    "seapath_rt_tuned_sections",
+    "seapath_rt_isolated_cpus",
+    "seapath_rt_cpus_count",
+    "seapath_rt_cmdline",
+    "seapath_rt_sysctl",
+    "seapath_hp_2m_title",
+    "seapath_hp_used",
+    "seapath_hp_total_line",
+    "seapath_hp_free",
+    "seapath_hp_reserved",
+    "seapath_hp_1g",
+    "seapath_hp_1g_pages",
+    "seapath_hp_numa",
+    "seapath_hp_numa_node",
+    "seapath_hp_numa_total",
+    "seapath_hp_numa_free",
+    "seapath_thp",
+    "seapath_thp_warn",
+    "seapath_hp_unavailable",
+    "seapath_legend_free",
+    "seapath_legend_isolated_free",
+    "seapath_legend_isolated_ht",
+    "seapath_legend_vm_vcpu",
+    "seapath_legend_vm_emu",
+    "seapath_legend_conflict",
+    "seapath_stat_cpus",
+    "seapath_stat_vcpu",
+    "seapath_stat_emulator",
+    "seapath_stat_isol_free",
+    "seapath_stat_isol_ht",
+    "seapath_stat_free",
+    "seapath_stat_conflicts",
+    "seapath_tip_cpu",
+    "seapath_tip_package",
+    "seapath_tip_ht_siblings",
+    "seapath_tip_conflict",
+    "seapath_tip_vcpu",
+    "seapath_tip_emulator",
+    "seapath_tip_isolated",
+    "seapath_tip_ht_busy",
+    "seapath_no_vms",
+    "seapath_vm_disabled",
+    "seapath_cpu_pinning",
+    "seapath_no_vcpupin",
+    "seapath_emulatorpin",
+    "seapath_rt_scheduling",
+    "seapath_no_rt_prio",
+    "seapath_numa",
+    "seapath_topo_vcpu",
+    "seapath_sched_vcpu",
+    "seapath_sched_emulator",
+    "seapath_vcpu_row",
+)
+
+
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
     "fr": {
         "subtitle": "Interface de test de performances temps réel",
@@ -131,6 +201,68 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "seapath_vm_colors_pick": "Choisir la couleur de cette VM",
         "seapath_show_disabled_vms": "Afficher les VM désactivées",
         "seapath_vm_details": "Détails des VM",
+        "seapath_client_error": "Erreur : {err}",
+        "seapath_cluster_mode_cluster": "Cluster Seapath",
+        "seapath_cluster_mode_standalone": "Standalone",
+        "seapath_cluster_dc": "DC :",
+        "seapath_cluster_online_nodes": "Nœuds actifs",
+        "seapath_cluster_vd_resources": "Ressources VirtualDomain",
+        "seapath_cluster_no_vms": "Aucune VM VirtualDomain trouvée dans le CIB.",
+        "seapath_debug_cib": "Debug CIB ▾",
+        "seapath_rt_tuned_profile": "Profil tuned",
+        "seapath_rt_scripts": "+ {n} script(s) : {names}",
+        "seapath_rt_tuned_sections": "tuned.conf — sections clés ▾",
+        "seapath_rt_isolated_cpus": "CPUs isolés",
+        "seapath_rt_cpus_count": "{n} CPUs",
+        "seapath_rt_cmdline": "Cmdline",
+        "seapath_rt_sysctl": "Sysctl RT",
+        "seapath_hp_2m_title": "Hugepages {size}M",
+        "seapath_hp_used": "{used} / {total} utilisées ({pct} %)",
+        "seapath_hp_total_line": "Total : {total} × {size}M = {gib} Gio",
+        "seapath_hp_free": "Libres : {free}",
+        "seapath_hp_reserved": "Réservées : {rsvd}",
+        "seapath_hp_1g": "Hugepages 1G",
+        "seapath_hp_1g_pages": "{pages} pages ({gib} Gio)",
+        "seapath_hp_numa": "Par nœud NUMA (2M)",
+        "seapath_hp_numa_node": "Nœud {node}",
+        "seapath_hp_numa_total": "{n} total",
+        "seapath_hp_numa_free": "{n} libres",
+        "seapath_thp": "Transparent Hugepages (THP)",
+        "seapath_thp_warn": "⚠ THP devrait être [never] pour les workloads RT / hugepages statiques",
+        "seapath_hp_unavailable": "Informations hugepages non disponibles.",
+        "seapath_legend_free": "Libre",
+        "seapath_legend_isolated_free": "Isolé libre",
+        "seapath_legend_isolated_ht": "Isolé (sibling HT occupé)",
+        "seapath_legend_vm_vcpu": "{name} vCPU",
+        "seapath_legend_vm_emu": "{name} émulateur",
+        "seapath_legend_conflict": "Conflit / chevauchement",
+        "seapath_stat_cpus": "{n} CPUs",
+        "seapath_stat_vcpu": "{n} vCPU",
+        "seapath_stat_emulator": "{n} émulateur",
+        "seapath_stat_isol_free": "{n} isolés libres",
+        "seapath_stat_isol_ht": "{n} isolés HT occupés",
+        "seapath_stat_free": "{n} libres",
+        "seapath_stat_conflicts": "⚠ {n} conflit(s) !",
+        "seapath_tip_cpu": "CPU {cpu}\nstatut={status}",
+        "seapath_tip_package": "package={pkg} cœur={core}",
+        "seapath_tip_ht_siblings": "siblings HT : {list}",
+        "seapath_tip_conflict": "⚠ CONFLIT : {vms}",
+        "seapath_tip_vcpu": "vCPU → {vms}",
+        "seapath_tip_emulator": "émulateur → {vms}",
+        "seapath_tip_isolated": "[isolé]",
+        "seapath_tip_ht_busy": "HT occupé sur : {list}",
+        "seapath_no_vms": "Aucune VM détectée.",
+        "seapath_vm_disabled": "(désactivée)",
+        "seapath_cpu_pinning": "Affectation CPU",
+        "seapath_no_vcpupin": "Aucun vcpupin défini",
+        "seapath_emulatorpin": "emulatorpin :",
+        "seapath_rt_scheduling": "Ordonnancement RT",
+        "seapath_no_rt_prio": "Pas de priorité RT configurée",
+        "seapath_numa": "NUMA :",
+        "seapath_topo_vcpu": "{n} vCPU",
+        "seapath_sched_vcpu": "vCPU {vcpus} : {sched} prio {prio}",
+        "seapath_sched_emulator": "émulateur : {sched} prio {prio}",
+        "seapath_vcpu_row": "vCPU {vcpu}",
         "status_ok": "OK",
         "status_warn": "ATTENTION",
         "status_fail": "ÉCHEC",
@@ -217,6 +349,68 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "seapath_vm_colors_pick": "Pick this VM color",
         "seapath_show_disabled_vms": "Show disabled VMs",
         "seapath_vm_details": "VM Details",
+        "seapath_client_error": "Error: {err}",
+        "seapath_cluster_mode_cluster": "Seapath cluster",
+        "seapath_cluster_mode_standalone": "Standalone",
+        "seapath_cluster_dc": "DC:",
+        "seapath_cluster_online_nodes": "Active nodes",
+        "seapath_cluster_vd_resources": "VirtualDomain resources",
+        "seapath_cluster_no_vms": "No VirtualDomain VM found in the CIB.",
+        "seapath_debug_cib": "Debug CIB ▾",
+        "seapath_rt_tuned_profile": "Tuned profile",
+        "seapath_rt_scripts": "+ {n} script(s): {names}",
+        "seapath_rt_tuned_sections": "tuned.conf — key sections ▾",
+        "seapath_rt_isolated_cpus": "Isolated CPUs",
+        "seapath_rt_cpus_count": "{n} CPUs",
+        "seapath_rt_cmdline": "Cmdline",
+        "seapath_rt_sysctl": "RT sysctl",
+        "seapath_hp_2m_title": "Hugepages {size}M",
+        "seapath_hp_used": "{used} / {total} used ({pct}%)",
+        "seapath_hp_total_line": "Total: {total} × {size}M = {gib} GiB",
+        "seapath_hp_free": "Free: {free}",
+        "seapath_hp_reserved": "Reserved: {rsvd}",
+        "seapath_hp_1g": "1G hugepages",
+        "seapath_hp_1g_pages": "{pages} pages ({gib} GiB)",
+        "seapath_hp_numa": "Per NUMA node (2M)",
+        "seapath_hp_numa_node": "Node {node}",
+        "seapath_hp_numa_total": "{n} total",
+        "seapath_hp_numa_free": "{n} free",
+        "seapath_thp": "Transparent Hugepages (THP)",
+        "seapath_thp_warn": "⚠ THP should be [never] for RT / static hugepages workloads",
+        "seapath_hp_unavailable": "Hugepages information not available.",
+        "seapath_legend_free": "Free",
+        "seapath_legend_isolated_free": "Isolated free",
+        "seapath_legend_isolated_ht": "Isolated (HT sibling busy)",
+        "seapath_legend_vm_vcpu": "{name} vCPU",
+        "seapath_legend_vm_emu": "{name} emu",
+        "seapath_legend_conflict": "Conflict / overlap",
+        "seapath_stat_cpus": "{n} CPUs",
+        "seapath_stat_vcpu": "{n} vCPU",
+        "seapath_stat_emulator": "{n} emulator",
+        "seapath_stat_isol_free": "{n} isolated free",
+        "seapath_stat_isol_ht": "{n} isolated HT busy",
+        "seapath_stat_free": "{n} free",
+        "seapath_stat_conflicts": "⚠ {n} conflict(s)!",
+        "seapath_tip_cpu": "CPU {cpu}\nstatus={status}",
+        "seapath_tip_package": "package={pkg} core={core}",
+        "seapath_tip_ht_siblings": "HT siblings: {list}",
+        "seapath_tip_conflict": "⚠ CONFLICT: {vms}",
+        "seapath_tip_vcpu": "vCPU → {vms}",
+        "seapath_tip_emulator": "emulator → {vms}",
+        "seapath_tip_isolated": "[isolated]",
+        "seapath_tip_ht_busy": "HT busy on: {list}",
+        "seapath_no_vms": "No VM detected.",
+        "seapath_vm_disabled": "(disabled)",
+        "seapath_cpu_pinning": "CPU pinning",
+        "seapath_no_vcpupin": "No vcpupin defined",
+        "seapath_emulatorpin": "emulatorpin:",
+        "seapath_rt_scheduling": "RT scheduling",
+        "seapath_no_rt_prio": "No RT priority configured",
+        "seapath_numa": "NUMA:",
+        "seapath_topo_vcpu": "{n} vCPU",
+        "seapath_sched_vcpu": "vCPU {vcpus}: {sched} prio {prio}",
+        "seapath_sched_emulator": "emulator: {sched} prio {prio}",
+        "seapath_vcpu_row": "vCPU {vcpu}",
         "status_ok": "OK",
         "status_warn": "WARNING",
         "status_fail": "FAIL",
@@ -270,6 +464,9 @@ app = FastAPI(title="rtperfui")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+LANG_COOKIE = "rtperfui_lang"
+LANG_COOKIE_MAX_AGE = 365 * 24 * 3600
+
 
 def get_lang_from_request(request: Request) -> str:
     # 1) Query parameter override
@@ -277,12 +474,17 @@ def get_lang_from_request(request: Request) -> str:
     if qp in SUPPORTED_LANGS:
         return qp
 
-    # 2) Accept-Language header
+    # 2) Cookie set when user picks FR/EN in the header
+    cookie = request.cookies.get("rtperfui_lang")
+    if cookie in SUPPORTED_LANGS:
+        return cookie
+
+    # 3) Accept-Language header
     header = request.headers.get("accept-language", "").lower()
     if header.startswith("fr") or " fr" in header:
         return "fr"
 
-    # 3) Default
+    # 4) Default
     return "en"
 
 
@@ -291,8 +493,29 @@ def t(lang: str, key: str) -> str:
     return lang_dict.get(key, TRANSLATIONS["en"].get(key, key))
 
 
+def seapath_messages(lang: str) -> Dict[str, str]:
+    return {key: t(lang, key) for key in SEAPATH_MSG_KEYS}
+
+
 # Inject translation helper globally into Jinja
 templates.env.globals["t"] = t
+
+
+def apply_lang_cookie(response: HTMLResponse, lang: str) -> HTMLResponse:
+    if lang in SUPPORTED_LANGS:
+        response.set_cookie(LANG_COOKIE, lang, max_age=LANG_COOKIE_MAX_AGE, samesite="lax")
+    return response
+
+
+@app.middleware("http")
+async def persist_lang_cookie(request: Request, call_next):
+    response = await call_next(request)
+    qp = request.query_params.get("lang")
+    if qp in SUPPORTED_LANGS:
+        response.set_cookie(
+            LANG_COOKIE, qp, max_age=LANG_COOKIE_MAX_AGE, samesite="lax",
+        )
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1960,20 +2183,24 @@ async def systemcheck_run():
 @app.get("/seapath", response_class=HTMLResponse)
 async def seapath_page(request: Request) -> HTMLResponse:
     lang = get_lang_from_request(request)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         "seapath.html",
         {
             "request": request,
             "lang": lang,
             "active_tab": "seapath",
             "vm_color_defaults": parse_vm_color_defaults(),
+            "seapath_ui": seapath_messages(lang),
         },
     )
+    return apply_lang_cookie(response, lang)
 
 
 @app.get("/api/seapath/run")
-async def seapath_run():
+async def seapath_run(request: Request):
+    lang = get_lang_from_request(request)
     data = run_seapath_checks()
+    data["_ui"] = seapath_messages(lang)
     return JSONResponse(data)
 
 
