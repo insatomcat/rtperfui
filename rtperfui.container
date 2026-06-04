@@ -33,6 +33,8 @@ Volume=/etc/corosync/corosync.conf:/etc/corosync/corosync.conf:ro
 Volume=/etc/ceph:/etc/ceph:ro
 
 Environment=PYTHONUNBUFFERED=1
+# Optional: default VM colors on the Seapath tab (guest name = preset)
+# Environment=RTPERFUI_VM_COLORS=GUEST1=green,GUEST2=red
 [Service]
 Restart=always
 

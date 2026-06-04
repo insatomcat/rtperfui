@@ -7,6 +7,80 @@
 .cpu-cell { transition: transform 0.1s ease, box-shadow 0.1s ease; cursor: default; }
 .cpu-cell:hover { transform: scale(1.18); box-shadow: 0 0 12px rgba(0,0,0,0.6); z-index: 10; position: relative; }
 .numa-group + .numa-group { margin-left: 12px; }
+.vm-color-swatch-btn {
+    cursor: pointer; flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.35);
+    transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+.vm-color-swatch-btn:hover { box-shadow: 0 0 0 2px #34d399; transform: scale(1.08); }
+.vm-color-popover {
+    position: fixed; z-index: 100;
+    max-width: calc(100vw - 1rem);
+    border-radius: 0.5rem;
+    border: 1px solid #475569;
+    background: #0f172a;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    padding: 0.75rem;
+}
+.vm-color-popover-backdrop {
+    position: fixed; inset: 0; z-index: 99;
+    background: transparent;
+}
+.vm-palette-auto {
+    font-size: 10px; color: #94a3b8; cursor: pointer; background: transparent;
+    border: 1px dashed #475569; border-radius: 0.25rem; padding: 0.2rem 0.5rem;
+}
+.vm-palette-auto:hover { border-color: #94a3b8; color: #e2e8f0; }
+.vm-palette-auto.selected { border-color: #64748b; background: #334155; color: #e2e8f0; }
+.color-picker { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.75rem; }
+.color-picker.is-auto { opacity: 0.55; }
+.color-picker-sv {
+    position: relative; width: 200px; height: 160px; border-radius: 2px;
+    cursor: crosshair; touch-action: none; flex-shrink: 0;
+}
+.color-picker-sv::before {
+    content: ''; position: absolute; inset: 0; border-radius: 2px;
+    background: linear-gradient(to top, #000, transparent);
+}
+.color-picker-sv::after {
+    content: ''; position: absolute; inset: 0; border-radius: 2px;
+    background: linear-gradient(to right, #fff, transparent);
+}
+.color-picker-sv-hue {
+    position: absolute; inset: 0; border-radius: 2px; z-index: 0;
+    background: hsl(0, 100%, 50%);
+}
+.color-picker-sv::before, .color-picker-sv::after { z-index: 1; }
+.color-picker-sv-cursor {
+    position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; z-index: 2;
+    border: 2px solid #fff; border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.5); pointer-events: none;
+}
+.color-picker-hue {
+    position: relative; width: 18px; height: 160px; border-radius: 2px; cursor: ns-resize;
+    touch-action: none; flex-shrink: 0;
+    background: linear-gradient(to bottom,
+        #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+}
+.color-picker-hue-cursor {
+    position: absolute; left: -2px; right: -2px; height: 4px; margin-top: -2px;
+    border: 2px solid #fff; border-radius: 1px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.45); pointer-events: none;
+}
+.color-picker-info { display: flex; flex-direction: column; gap: 0.5rem; min-width: 140px; }
+.color-picker-preview {
+    width: 100%; height: 48px; border-radius: 2px; border: 1px solid #475569;
+}
+.color-picker-fields { font-size: 10px; color: #94a3b8; font-family: ui-monospace, monospace; }
+.color-picker-fields label { display: block; margin-bottom: 0.35rem; }
+.color-picker-fields input {
+    width: 100%; margin-top: 0.15rem; padding: 0.2rem 0.35rem;
+    background: #0f172a; border: 1px solid #475569; border-radius: 3px;
+    color: #e2e8f0; font-size: 10px; font-family: inherit;
+}
+.color-picker-fields input[readonly] { opacity: 0.85; cursor: default; }
+.color-picker-row2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.35rem; }
+.color-picker-row2 input { width: 100%; margin-top: 0.1rem; }
 </style>
 {% endblock %}
 
@@ -69,29 +143,533 @@
 {% block scripts %}
 <script>
 const lang = "{{ lang }}";
+const MSG = {
+    vm_color_auto: {{ t(lang, "seapath_vm_color_auto") | tojson }},
+    color_hex: {{ t(lang, "seapath_color_hex") | tojson }},
+    vm_colors_pick: {{ t(lang, "seapath_vm_colors_pick") | tojson }},
+    show_disabled_vms: {{ t(lang, "seapath_show_disabled_vms") | tojson }},
+};
+const seapathVmColorDefaults = {{ vm_color_defaults | tojson }};
+const VM_COLOR_STORAGE_KEY = 'rtperfui-seapath-vm-colors';
+
 const runBtn = document.getElementById("run-btn");
 const statusEl = document.getElementById("status");
 const results = document.getElementById("results");
 let lastSeapathData = null;
 let showDisabledVms = false;
+let activeColorPickerVm = null;
+let vmColorPopoverEl = null;
+let vmColorBackdropEl = null;
 
-// VM color palette — full + dark variant for emulator cells
-const VM_PALETTE = [
-    { fill: '#1d4ed8', dark: '#172554', text: '#bfdbfe' },
-    { fill: '#6d28d9', dark: '#2e1065', text: '#ddd6fe' },
-    { fill: '#047857', dark: '#052e16', text: '#bbf7d0' },
-    { fill: '#b45309', dark: '#451a03', text: '#fde68a' },
-    { fill: '#0e7490', dark: '#083344', text: '#a5f3fc' },
-    { fill: '#9d174d', dark: '#500724', text: '#fbcfe8' },
-    { fill: '#3f6212', dark: '#1a2e05', text: '#d9f99d' },
-    { fill: '#9a3412', dark: '#431407', text: '#fed7aa' },
-];
+// Named presets (env RTPERFUI_VM_COLORS) + derived styles for CPU cells
+const VM_COLOR_PRESETS = {
+    blue:   { fill: '#1d4ed8', dark: '#172554', text: '#bfdbfe' },
+    purple: { fill: '#6d28d9', dark: '#2e1065', text: '#ddd6fe' },
+    green:  { fill: '#047857', dark: '#052e16', text: '#bbf7d0' },
+    amber:  { fill: '#b45309', dark: '#451a03', text: '#fde68a' },
+    cyan:   { fill: '#0e7490', dark: '#083344', text: '#a5f3fc' },
+    pink:   { fill: '#9d174d', dark: '#500724', text: '#fbcfe8' },
+    lime:   { fill: '#3f6212', dark: '#1a2e05', text: '#d9f99d' },
+    orange: { fill: '#9a3412', dark: '#431407', text: '#fed7aa' },
+    red:    { fill: '#dc2626', dark: '#450a0a', text: '#fecaca' },
+    gray:   { fill: '#6b7280', dark: '#374151', text: '#f3f4f6' },
+};
+const VM_PALETTE_AUTO_ORDER = ['blue', 'purple', 'green', 'amber', 'cyan', 'pink', 'lime', 'orange', 'red', 'gray'];
+
+function loadVmColorOverrides() {
+    let stored = {};
+    try {
+        stored = JSON.parse(localStorage.getItem(VM_COLOR_STORAGE_KEY) || '{}');
+    } catch (_) { stored = {}; }
+    return { ...seapathVmColorDefaults, ...stored };
+}
+
+let vmColorOverrides = loadVmColorOverrides();
+
+function persistVmColorOverrides() {
+    localStorage.setItem(VM_COLOR_STORAGE_KEY, JSON.stringify(vmColorOverrides));
+}
+
+function normalizeHex(hex) {
+    if (!hex || typeof hex !== 'string') return null;
+    let h = hex.trim().toLowerCase();
+    if (!h.startsWith('#')) h = '#' + h;
+    if (/^#[0-9a-f]{3}$/.test(h)) {
+        h = '#' + h.slice(1).split('').map(c => c + c).join('');
+    }
+    return /^#[0-9a-f]{6}$/.test(h) ? h : null;
+}
+
+function hexToRgb(hex) {
+    const h = normalizeHex(hex);
+    if (!h) return null;
+    const n = parseInt(h.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex(r, g, b) {
+    const c = x => Math.max(0, Math.min(255, Math.round(x)));
+    return '#' + [c(r), c(g), c(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+function styleFromFill(fill) {
+    const rgb = hexToRgb(fill);
+    if (!rgb) return VM_COLOR_PRESETS.gray;
+    const [r, g, b] = rgb;
+    const dark = rgbToHex(r * 0.22, g * 0.22, b * 0.22);
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    const text = lum > 150 ? '#0f172a' : '#f8fafc';
+    return { fill: normalizeHex(fill), dark, text };
+}
+
+function presetStyle(key) {
+    return VM_COLOR_PRESETS[key] ?? VM_COLOR_PRESETS.gray;
+}
+
+function resolveOverrideFill(value) {
+    if (!value) return null;
+    if (value.startsWith('#')) return normalizeHex(value);
+    const p = VM_COLOR_PRESETS[value];
+    return p ? normalizeHex(p.fill) : null;
+}
+
+function vmStyleForOverride(value) {
+    const fill = resolveOverrideFill(value);
+    if (fill) return styleFromFill(fill);
+    if (value && VM_COLOR_PRESETS[value]) return presetStyle(value);
+    return null;
+}
 
 function buildVmColorMap(vms) {
     const map = {};
-    vms.forEach((vm, i) => { map[vm.name] = VM_PALETTE[i % VM_PALETTE.length]; });
+    let autoIdx = 0;
+    (vms || []).forEach(vm => {
+        const custom = vmStyleForOverride(vmColorOverrides[vm.name]);
+        if (custom) {
+            map[vm.name] = custom;
+        } else {
+            const autoKey = VM_PALETTE_AUTO_ORDER[autoIdx % VM_PALETTE_AUTO_ORDER.length];
+            map[vm.name] = presetStyle(autoKey);
+            autoIdx++;
+        }
+    });
     return map;
 }
+
+function setVmColorFill(vmName, fillOrNull, { refresh = true } = {}) {
+    if (fillOrNull) vmColorOverrides[vmName] = normalizeHex(fillOrNull);
+    else delete vmColorOverrides[vmName];
+    persistVmColorOverrides();
+    if (refresh && lastSeapathData) renderSeapathViews(lastSeapathData);
+}
+
+let vmColorMapRefreshTimer = null;
+
+function updateVmCardChrome(vmName) {
+    if (!lastSeapathData) return;
+    const style = buildVmColorMap(lastSeapathData.vms ?? [])[vmName];
+    if (!style) return;
+    document.querySelectorAll('[data-vm-card]').forEach(card => {
+        if (card.getAttribute('data-vm-name') !== vmName) return;
+        const sw = card.querySelector('[data-vm-color-swatch]');
+        if (sw) sw.style.background = style.fill;
+        card.style.borderColor = style.fill + '80';
+    });
+}
+
+function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    const s = max === 0 ? 0 : (d / max) * 100;
+    const v = max * 100;
+    if (d !== 0) {
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60;
+        else if (max === g) h = ((b - r) / d + 2) * 60;
+        else h = ((r - g) / d + 4) * 60;
+    }
+    return { h, s, v };
+}
+
+function hsvToRgb(h, s, v) {
+    h = ((h % 360) + 360) % 360;
+    s /= 100; v /= 100;
+    const c = v * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = v - c;
+    let rp = 0, gp = 0, bp = 0;
+    if (h < 60) { rp = c; gp = x; }
+    else if (h < 120) { rp = x; gp = c; }
+    else if (h < 180) { gp = c; bp = x; }
+    else if (h < 240) { gp = x; bp = c; }
+    else if (h < 300) { rp = x; bp = c; }
+    else { rp = c; bp = x; }
+    return [
+        Math.round((rp + m) * 255),
+        Math.round((gp + m) * 255),
+        Math.round((bp + m) * 255),
+    ];
+}
+
+function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+        else if (max === g) h = ((b - r) / d + 2) / 6;
+        else h = ((r - g) / d + 4) / 6;
+    }
+    return {
+        h: Math.round(h * 360),
+        s: Math.round(s * 100),
+        l: Math.round(l * 100),
+    };
+}
+
+function rgbToCmyk(r, g, b) {
+    if (r === 0 && g === 0 && b === 0) return { c: 0, m: 0, y: 0, k: 100 };
+    const c = 1 - r / 255, m = 1 - g / 255, y = 1 - b / 255;
+    const k = Math.min(c, m, y);
+    if (k >= 1) return { c: 0, m: 0, y: 0, k: 100 };
+    return {
+        c: Math.round(((c - k) / (1 - k)) * 100),
+        m: Math.round(((m - k) / (1 - k)) * 100),
+        y: Math.round(((y - k) / (1 - k)) * 100),
+        k: Math.round(k * 100),
+    };
+}
+
+function hexToHsv(hex) {
+    const rgb = hexToRgb(hex);
+    return rgb ? rgbToHsv(...rgb) : { h: 0, s: 0, v: 45 };
+}
+
+function mountVmColorPicker(mountEl, vmName) {
+    const initial = resolveOverrideFill(vmColorOverrides[vmName]) || '#6b7280';
+    let { h, s, v } = hexToHsv(initial);
+    let dragging = null;
+
+    mountEl.innerHTML = `
+        <div class="color-picker" data-picker>
+            <div class="color-picker-sv" data-sv>
+                <div class="color-picker-sv-hue" data-sv-hue></div>
+                <div class="color-picker-sv-cursor" data-sv-cursor></div>
+            </div>
+            <div class="color-picker-hue" data-hue>
+                <div class="color-picker-hue-cursor" data-hue-cursor></div>
+            </div>
+            <div class="color-picker-info">
+                <div class="color-picker-preview" data-preview></div>
+                <div class="color-picker-fields">
+                    <label>${esc(MSG.color_hex)}
+                        <input type="text" data-in-hex maxlength="7" spellcheck="false" autocomplete="off">
+                    </label>
+                    <div class="color-picker-row2">
+                        <label>R <input type="number" data-in-r min="0" max="255"></label>
+                        <label>G <input type="number" data-in-g min="0" max="255"></label>
+                        <label>B <input type="number" data-in-b min="0" max="255"></label>
+                    </div>
+                    <div class="color-picker-row2">
+                        <label>H <input type="number" data-in-h min="0" max="360"></label>
+                        <label>S <input type="number" data-in-s min="0" max="100"></label>
+                        <label>L <input type="number" data-in-l min="0" max="100"></label>
+                    </div>
+                    <div class="color-picker-row2">
+                        <label>C <input type="number" data-in-c min="0" max="100" readonly></label>
+                        <label>M <input type="number" data-in-m min="0" max="100" readonly></label>
+                        <label>Y <input type="number" data-in-y min="0" max="100" readonly></label>
+                    </div>
+                    <label>K <input type="number" data-in-k min="0" max="100" readonly></label>
+                </div>
+            </div>
+        </div>`;
+
+    const picker = mountEl.querySelector('[data-picker]');
+    const svEl = mountEl.querySelector('[data-sv]');
+    const svHue = mountEl.querySelector('[data-sv-hue]');
+    const svCursor = mountEl.querySelector('[data-sv-cursor]');
+    const hueEl = mountEl.querySelector('[data-hue]');
+    const hueCursor = mountEl.querySelector('[data-hue-cursor]');
+    const preview = mountEl.querySelector('[data-preview]');
+    const inHex = mountEl.querySelector('[data-in-hex]');
+    const inR = mountEl.querySelector('[data-in-r]');
+    const inG = mountEl.querySelector('[data-in-g]');
+    const inB = mountEl.querySelector('[data-in-b]');
+    const inH = mountEl.querySelector('[data-in-h]');
+    const inS = mountEl.querySelector('[data-in-s]');
+    const inL = mountEl.querySelector('[data-in-l]');
+    const inC = mountEl.querySelector('[data-in-c]');
+    const inM = mountEl.querySelector('[data-in-m]');
+    const inY = mountEl.querySelector('[data-in-y]');
+    const inK = mountEl.querySelector('[data-in-k]');
+
+    function isAuto() {
+        return !resolveOverrideFill(vmColorOverrides[vmName]);
+    }
+
+    function syncAutoStyle() {
+        const auto = isAuto();
+        picker.classList.toggle('is-auto', auto);
+        vmColorPopoverEl?.querySelector('[data-popover-auto]')
+            ?.classList.toggle('selected', auto);
+    }
+
+    function currentRgb() {
+        return hsvToRgb(h, s, v);
+    }
+
+    function currentHex() {
+        return normalizeHex(rgbToHex(...currentRgb()));
+    }
+
+    function syncUi() {
+        svHue.style.background = `hsl(${h}, 100%, 50%)`;
+        svCursor.style.left = `${s}%`;
+        svCursor.style.top = `${100 - v}%`;
+        hueCursor.style.top = `${(h / 360) * 100}%`;
+        const [r, g, b] = currentRgb();
+        const hex = currentHex();
+        preview.style.background = hex;
+        inHex.value = hex;
+        inR.value = r;
+        inG.value = g;
+        inB.value = b;
+        const hsl = rgbToHsl(r, g, b);
+        inH.value = hsl.h;
+        inS.value = hsl.s;
+        inL.value = hsl.l;
+        const cmyk = rgbToCmyk(r, g, b);
+        inC.value = cmyk.c;
+        inM.value = cmyk.m;
+        inY.value = cmyk.y;
+        inK.value = cmyk.k;
+        syncAutoStyle();
+    }
+
+    function setHsv(nh, ns, nv, { live = false, commit = false } = {}) {
+        h = Math.max(0, Math.min(360, nh));
+        s = Math.max(0, Math.min(100, ns));
+        v = Math.max(0, Math.min(100, nv));
+        syncUi();
+        if (live || commit) {
+            vmColorOverrides[vmName] = currentHex();
+            persistVmColorOverrides();
+            updateVmCardChrome(vmName);
+            if (live) scheduleVmColorMapRefresh();
+        }
+        if (commit && lastSeapathData) {
+            clearTimeout(vmColorMapRefreshTimer);
+            renderCpuMapOnly(lastSeapathData);
+            updateVmCardChrome(vmName);
+        }
+    }
+
+    function setFromHex(hex, opts) {
+        const n = normalizeHex(hex);
+        if (!n) return;
+        const hsv = hexToHsv(n);
+        setHsv(hsv.h, hsv.s, hsv.v, opts);
+    }
+
+    function pointerSv(ev) {
+        const rect = svEl.getBoundingClientRect();
+        const x = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
+        const y = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
+        setHsv(h, (x / rect.width) * 100, 100 - (y / rect.height) * 100, { live: true });
+    }
+
+    function pointerHue(ev) {
+        const rect = hueEl.getBoundingClientRect();
+        const y = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
+        setHsv((y / rect.height) * 360, s, v, { live: true });
+    }
+
+    function endDrag() {
+        if (!dragging) return;
+        dragging = null;
+        setHsv(h, s, v, { commit: true });
+    }
+
+    svEl.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        svEl.setPointerCapture(ev.pointerId);
+        dragging = 'sv';
+        pointerSv(ev);
+    });
+    svEl.addEventListener('pointermove', (ev) => { if (dragging === 'sv') pointerSv(ev); });
+    svEl.addEventListener('pointerup', endDrag);
+    svEl.addEventListener('pointercancel', endDrag);
+
+    hueEl.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        hueEl.setPointerCapture(ev.pointerId);
+        dragging = 'hue';
+        pointerHue(ev);
+    });
+    hueEl.addEventListener('pointermove', (ev) => { if (dragging === 'hue') pointerHue(ev); });
+    hueEl.addEventListener('pointerup', endDrag);
+    hueEl.addEventListener('pointercancel', endDrag);
+
+    inHex.addEventListener('change', () => setFromHex(inHex.value, { commit: true }));
+    inHex.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); setFromHex(inHex.value, { commit: true }); }
+    });
+
+    function bindRgbInput(inp, idx) {
+        inp.addEventListener('change', () => {
+            const rgb = currentRgb();
+            rgb[idx] = Math.max(0, Math.min(255, parseInt(inp.value, 10) || 0));
+            const hsv = rgbToHsv(...rgb);
+            setHsv(hsv.h, hsv.s, hsv.v, { commit: true });
+        });
+    }
+    bindRgbInput(inR, 0);
+    bindRgbInput(inG, 1);
+    bindRgbInput(inB, 2);
+
+    function applyFromHslFields() {
+        const rgb = hslToRgb(
+            parseInt(inH.value, 10) || 0,
+            parseInt(inS.value, 10) || 0,
+            parseInt(inL.value, 10) || 0,
+        );
+        const hsv = rgbToHsv(...rgb);
+        setHsv(hsv.h, hsv.s, hsv.v, { commit: true });
+    }
+    inH.addEventListener('change', applyFromHslFields);
+    inS.addEventListener('change', applyFromHslFields);
+    inL.addEventListener('change', applyFromHslFields);
+
+    syncUi();
+}
+
+function hslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    let rp = 0, gp = 0, bp = 0;
+    if (h < 60) { rp = c; gp = x; }
+    else if (h < 120) { rp = x; gp = c; }
+    else if (h < 180) { gp = c; bp = x; }
+    else if (h < 240) { gp = x; bp = c; }
+    else if (h < 300) { rp = x; bp = c; }
+    else { rp = c; bp = x; }
+    return [
+        Math.round((rp + m) * 255),
+        Math.round((gp + m) * 255),
+        Math.round((bp + m) * 255),
+    ];
+}
+
+function renderCpuMapOnly(data) {
+    const allVms = data.vms ?? [];
+    const visibleVms = filterVmsForViews(allVms, showDisabledVms);
+    const vmColorMap = buildVmColorMap(allVms);
+    renderCpuMap(
+        data.cpu_map ?? [], visibleVms, vmColorMap,
+        document.getElementById('cpu-grid'),
+        document.getElementById('cpu-legend'),
+        document.getElementById('cpu-stats')
+    );
+}
+
+function scheduleVmColorMapRefresh() {
+    clearTimeout(vmColorMapRefreshTimer);
+    vmColorMapRefreshTimer = setTimeout(() => {
+        if (lastSeapathData) renderCpuMapOnly(lastSeapathData);
+    }, 60);
+}
+
+function ensureVmColorPopover() {
+    if (vmColorPopoverEl) return vmColorPopoverEl;
+
+    vmColorBackdropEl = document.createElement('div');
+    vmColorBackdropEl.className = 'vm-color-popover-backdrop hidden';
+    vmColorBackdropEl.addEventListener('click', closeVmColorPicker);
+
+    vmColorPopoverEl = document.createElement('div');
+    vmColorPopoverEl.id = 'vm-color-popover';
+    vmColorPopoverEl.className = 'vm-color-popover hidden';
+    vmColorPopoverEl.innerHTML = `
+        <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700/80">
+            <span class="text-[11px] font-mono text-slate-200 truncate" data-popover-title></span>
+            <button type="button" class="vm-palette-auto ml-auto" data-popover-auto>${esc(MSG.vm_color_auto)}</button>
+        </div>
+        <div data-picker-mount></div>`;
+    vmColorPopoverEl.addEventListener('click', (e) => e.stopPropagation());
+
+    document.body.appendChild(vmColorBackdropEl);
+    document.body.appendChild(vmColorPopoverEl);
+    return vmColorPopoverEl;
+}
+
+function positionVmColorPopover(anchorEl) {
+    const pop = vmColorPopoverEl;
+    const pad = 8;
+    pop.classList.remove('hidden');
+    const rect = anchorEl.getBoundingClientRect();
+    const popRect = pop.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.bottom + pad;
+    if (left + popRect.width > window.innerWidth - pad) {
+        left = Math.max(pad, window.innerWidth - popRect.width - pad);
+    }
+    if (top + popRect.height > window.innerHeight - pad) {
+        top = Math.max(pad, rect.top - popRect.height - pad);
+    }
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+}
+
+function openVmColorPicker(vmName, anchorEl) {
+    const pop = ensureVmColorPopover();
+    activeColorPickerVm = vmName;
+    pop.querySelector('[data-popover-title]').textContent = vmName;
+    const mount = pop.querySelector('[data-picker-mount]');
+    mountVmColorPicker(mount, vmName);
+    const autoBtn = pop.querySelector('[data-popover-auto]');
+    autoBtn.onclick = () => {
+        setVmColorFill(vmName, null, { refresh: false });
+        updateVmCardChrome(vmName);
+        mountVmColorPicker(mount, vmName);
+        if (lastSeapathData) renderCpuMapOnly(lastSeapathData);
+    };
+    vmColorBackdropEl.classList.remove('hidden');
+    positionVmColorPopover(anchorEl);
+}
+
+function closeVmColorPicker() {
+    activeColorPickerVm = null;
+    vmColorBackdropEl?.classList.add('hidden');
+    vmColorPopoverEl?.classList.add('hidden');
+}
+
+function bindVmCardColorPickers(container) {
+    if (!container || container.dataset.colorPickerBound) return;
+    container.dataset.colorPickerBound = '1';
+    container.addEventListener('click', (e) => {
+        const sw = e.target.closest('[data-vm-color-swatch]');
+        if (!sw) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const vmName = sw.getAttribute('data-vm-name');
+        if (activeColorPickerVm === vmName && !vmColorPopoverEl?.classList.contains('hidden')) {
+            closeVmColorPicker();
+        } else {
+            openVmColorPicker(vmName, sw);
+        }
+    });
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeVmColorPicker();
+});
 
 function filterVmsForViews(vms, includeDisabled) {
     if (includeDisabled) return vms;
@@ -494,13 +1072,17 @@ function renderVmCards(vms, vmColorMap, el) {
         return;
     }
 
+    if (activeColorPickerVm) closeVmColorPicker();
+
     el.innerHTML = vms.map(vm => {
         const c = vmColorMap[vm.name] ?? { fill: '#6b7280', text: '#f3f4f6' };
 
         if (vm.error && !vm.vcpu_count) {
-            return `<div class="rounded-xl border border-slate-700/60 bg-slate-950/40 p-4">
+            return `<div class="rounded-xl border border-slate-700/60 bg-slate-950/40 p-4" data-vm-card data-vm-name="${esc(vm.name)}">
                 <div class="flex items-center gap-2 mb-2">
-                    <div class="w-3 h-3 rounded-sm" style="background:${c.fill}"></div>
+                    <button type="button" class="vm-color-swatch-btn w-3 h-3 rounded-sm border-0 p-0"
+                            data-vm-color-swatch data-vm-name="${esc(vm.name)}" data-auto-fill="${c.fill}"
+                            style="background:${c.fill}" title="${esc(MSG.vm_colors_pick)}"></button>
                     <span class="font-semibold text-slate-200">${esc(vm.name)}</span>
                     <span class="text-[11px] text-slate-500">@ ${esc(vm.host ?? '?')}</span>
                 </div>
@@ -545,9 +1127,12 @@ function renderVmCards(vms, vmColorMap, el) {
             .join('\n') || '';
         const debugFull = `source=${vm._debug_state_source ?? 'unknown'}\n${debugTip}\nresolution=${resolution}`;
 
-        return `<div class="rounded-xl border bg-slate-950/40 p-4" style="border-color:${c.fill}50">
+        return `<div class="rounded-xl border bg-slate-950/40 p-4" data-vm-card data-vm-name="${esc(vm.name)}"
+            style="border-color:${c.fill}80">
             <div class="flex flex-wrap items-center gap-3 mb-3">
-                <div class="w-3.5 h-3.5 rounded-sm flex-shrink-0" style="background:${c.fill}"></div>
+                <button type="button" class="vm-color-swatch-btn w-3.5 h-3.5 rounded-sm border-0 p-0"
+                        data-vm-color-swatch data-vm-name="${esc(vm.name)}" data-auto-fill="${c.fill}"
+                        style="background:${c.fill}" title="${esc(MSG.vm_colors_pick)}"></button>
                 <span class="font-semibold text-slate-100 text-sm">${esc(vm.name)}</span>
                 <span class="text-[11px] ${stateColor}" title="${esc(debugFull)}">${esc(vm.state ?? '?')}</span>
                 ${vm.host ? `<span class="text-[11px] text-slate-500">@ ${esc(vm.host)}</span>` : ''}
@@ -593,7 +1178,7 @@ function renderVmCards(vms, vmColorMap, el) {
 function renderSeapathViews(data) {
     const allVms = data.vms ?? [];
     const visibleVms = filterVmsForViews(allVms, showDisabledVms);
-    const vmColorMap = buildVmColorMap(visibleVms);
+    const vmColorMap = buildVmColorMap(allVms);
 
     renderCluster(data.cluster ?? {}, document.getElementById('cluster-content'));
     renderRT(data.rt_config ?? {}, document.getElementById('rt-content'));
@@ -604,7 +1189,9 @@ function renderSeapathViews(data) {
         document.getElementById('cpu-legend'),
         document.getElementById('cpu-stats')
     );
-    renderVmCards(visibleVms, vmColorMap, document.getElementById('vm-cards'));
+    const vmCardsEl = document.getElementById('vm-cards');
+    renderVmCards(visibleVms, vmColorMap, vmCardsEl);
+    bindVmCardColorPickers(vmCardsEl);
 }
 
 function ensureDisabledToggle() {
@@ -620,7 +1207,7 @@ function ensureDisabledToggle() {
     wrap.innerHTML = `
         <label class="inline-flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
             <input id="toggle-disabled-vms" type="checkbox" class="accent-emerald-500">
-            Afficher les VM désactivées
+            ${esc(MSG.show_disabled_vms)}
         </label>
     `;
     title.insertAdjacentElement('afterend', wrap);

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
+import os
 import subprocess
 import shlex
 import re
@@ -17,6 +18,37 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 
 SUPPORTED_LANGS = ("fr", "en")
+
+VM_COLOR_PRESET_KEYS = (
+    "blue",
+    "purple",
+    "green",
+    "amber",
+    "cyan",
+    "pink",
+    "lime",
+    "orange",
+    "red",
+    "gray",
+)
+
+
+def parse_vm_color_defaults() -> Dict[str, str]:
+    """Parse RTPERFUI_VM_COLORS env, e.g. GUEST1=green,GUEST2=red."""
+    raw = os.environ.get("RTPERFUI_VM_COLORS", "").strip()
+    if not raw:
+        return {}
+    out: Dict[str, str] = {}
+    for part in raw.split(","):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        name, color = part.split("=", 1)
+        name = name.strip()
+        color = color.strip().lower()
+        if name and color in VM_COLOR_PRESET_KEYS:
+            out[name] = color
+    return out
 
 
 TRANSLATIONS: Dict[str, Dict[str, str]] = {
@@ -94,6 +126,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "seapath_rt_config": "Configuration RT",
         "seapath_hugepages": "Hugepages",
         "seapath_cpu_map": "Carte d'affectation CPU",
+        "seapath_vm_color_auto": "Automatique",
+        "seapath_color_hex": "Hex",
+        "seapath_vm_colors_pick": "Choisir la couleur de cette VM",
+        "seapath_show_disabled_vms": "Afficher les VM désactivées",
         "seapath_vm_details": "Détails des VM",
         "status_ok": "OK",
         "status_warn": "ATTENTION",
@@ -176,6 +212,10 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "seapath_rt_config": "RT Configuration",
         "seapath_hugepages": "Hugepages",
         "seapath_cpu_map": "CPU Assignment Map",
+        "seapath_vm_color_auto": "Automatic",
+        "seapath_color_hex": "Hex",
+        "seapath_vm_colors_pick": "Pick this VM color",
+        "seapath_show_disabled_vms": "Show disabled VMs",
         "seapath_vm_details": "VM Details",
         "status_ok": "OK",
         "status_warn": "WARNING",
@@ -1922,7 +1962,12 @@ async def seapath_page(request: Request) -> HTMLResponse:
     lang = get_lang_from_request(request)
     return templates.TemplateResponse(
         "seapath.html",
-        {"request": request, "lang": lang, "active_tab": "seapath"},
+        {
+            "request": request,
+            "lang": lang,
+            "active_tab": "seapath",
+            "vm_color_defaults": parse_vm_color_defaults(),
+        },
     )
 
 

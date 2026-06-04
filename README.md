@@ -62,6 +62,9 @@ Web application in Python (FastAPI) that provides a frontend to run real‑time 
     - **VM detail cards**: per‑VM vCPU topology, vcpupin / emulatorpin table, RT scheduling
       (vcpusched / emulatorsched priorities), NUMA policy, and memory size.
     - Toggle to show or hide disabled VMs across all views.
+    - **Per‑VM colors**: click the color square on a VM detail card to open a color picker;
+      the choice updates the CPU map and is persisted in the browser. Optional server defaults
+      via `RTPERFUI_VM_COLORS=GUEST1=green,GUEST2=red`.
     - When running inside a container, falls back to `nsenter` into PID‑1 namespaces to reach
       host‑only binaries (`cibadmin`, `rbd`, etc.).
 
